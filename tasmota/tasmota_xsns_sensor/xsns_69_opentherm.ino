@@ -38,14 +38,14 @@
 #define OT_BOILER_MIN 40
 #endif
 #ifndef OT_BOILER_MAX
-#define OT_BOILER_MAX 85
+#define OT_BOILER_MAX 80
 #endif
 
 #ifndef OT_HOT_WATER_DEFAULT
-#define OT_HOT_WATER_DEFAULT 36;
+#define OT_HOT_WATER_DEFAULT 40;
 #endif
 #ifndef OT_BOILER_DEFAULT
-#define OT_BOILER_DEFAULT 85;
+#define OT_BOILER_DEFAULT 40;
 #endif
 
 // Seconds before OT will make an attempt to connect to the boiler after connection error
@@ -252,17 +252,14 @@ void sns_opentherm_stat(bool json)
     if (json)
     {
         ResponseAppend_P(PSTR(",\"OPENTHERM\":{\"conn\":\"%s\",\"settings\":%d"), statusStr, Settings->ot_flags);
-        sns_opentherm_dump_telemetry();
+        sns_opentherm_dump_telemetry(false);
         ResponseJsonEnd();
 #ifdef USE_WEBSERVER
     }
     else
     {
         WSContentSend_P(PSTR("{s}OpenTherm status{m}%s (0x%X){e}"), statusStr, (int)sns_ot_boiler_status.m_slave_flags);
-        if (sns_ot_connection_status < OpenThermConnectionStatus::OTC_READY)
-        {
-            return;
-        }
+
         WSContentSend_P(PSTR("{s}Std/OEM Fault Codes{m}%d / %d{e}"),
                         (int)sns_ot_boiler_status.m_fault_code,
                         (int)sns_ot_boiler_status.m_oem_fault_code);
@@ -270,8 +267,9 @@ void sns_opentherm_stat(bool json)
         WSContentSend_P(PSTR("{s}OEM Diagnostic Code{m}%d{e}"),
                         (int)sns_ot_boiler_status.m_oem_diag_code);
 
-        WSContentSend_P(PSTR("{s}Hot Water Setpoint{m}%d{e}"),
-                        (int)sns_ot_boiler_status.m_hotWaterSetpoint_read);
+        WSContentSend_P(PSTR("{s}Hot Water Temp/Setpnt{m}%d / %d{e}"),
+                        (int)sns_ot_boiler_status.m_hotWaterSetpoint_read,
+                        (int)sns_ot_boiler_status.m_hotWaterSetpoint);
 
         WSContentSend_P(PSTR("{s}Flame Modulation{m}%d{e}"),
                         (int)sns_ot_boiler_status.m_flame_modulation_read);
@@ -280,40 +278,26 @@ void sns_opentherm_stat(bool json)
                         (int)sns_ot_boiler_status.m_boiler_temperature_read,
                         (int)sns_ot_boiler_status.m_boilerSetpoint);
 
-        if (OpenTherm::isCentralHeatingActive(sns_ot_boiler_status.m_slave_raw_status))
-        {
-            WSContentSend_P(PSTR("{s}Central Heating is ACTIVE{m}{e}"));
-        }
+        WSContentSend_P(PSTR("{s}Central Heating is {m}%s / %s{e}"),
+                        sns_ot_boiler_status.m_enableCentralHeating ? "ACTIVE" : "INACTIVE",
+                        OpenTherm::isCentralHeatingActive(sns_ot_boiler_status.m_slave_raw_status) ? "ON" : "OFF");
 
-        if (sns_ot_boiler_status.m_enableHotWater)
-        {
-            WSContentSend_P(PSTR("{s}Hot Water is Enabled{m}{e}"));
-        }
+        WSContentSend_P(PSTR("{s}Hot Water is {m}%s / %s{e}"),
+                        sns_ot_boiler_status.m_enableHotWater ? "ACTIVE" : "INACTIVE",
+                        OpenTherm::isHotWaterActive(sns_ot_boiler_status.m_slave_raw_status) ? "ON" : "OFF");
 
-        if (OpenTherm::isHotWaterActive(sns_ot_boiler_status.m_slave_raw_status))
-        {
-            WSContentSend_P(PSTR("{s}Hot Water is ACTIVE{m}{e}"));
-        }
+        WSContentSend_P(PSTR("{s}Flame is {m}%s {e}"), OpenTherm::isFlameOn(sns_ot_boiler_status.m_slave_raw_status) ? "ON" : "OFF");
 
-        if (OpenTherm::isFlameOn(sns_ot_boiler_status.m_slave_raw_status))
-        {
-            WSContentSend_P(PSTR("{s}Flame is ACTIVE{m}{e}"));
-        }
-
-        if (sns_ot_boiler_status.m_enableCooling)
-        {
-            WSContentSend_P(PSTR("{s}Cooling is Enabled{m}{e}"));
-        }
-
-        if (OpenTherm::isCoolingActive(sns_ot_boiler_status.m_slave_raw_status))
-        {
-            WSContentSend_P(PSTR("{s}Cooling is ACTIVE{m}{e}"));
-        }
+        WSContentSend_P(PSTR("{s}Cooling is {m}%s / %s{e}"),
+            sns_ot_boiler_status.m_enableCooling ? "ACTIVE" : "INACTIVE",
+            OpenTherm::isCoolingActive(sns_ot_boiler_status.m_slave_raw_status) ? "ON" : "OFF");
 
         if (OpenTherm::isDiagnostic(sns_ot_boiler_status.m_slave_raw_status))
         {
             WSContentSend_P(PSTR("{s}Diagnostic Indication{m}{e}"));
         }
+
+        sns_opentherm_dump_telemetry(true);
 
 #endif // USE_WEBSERVER
     }

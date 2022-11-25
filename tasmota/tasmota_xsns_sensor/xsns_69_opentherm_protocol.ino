@@ -448,8 +448,6 @@ void sns_opentherm_tele_oem_diag(struct OpenThermCommandT *self)
 /////////////////////////////////// Boiler Boiler Lock-out Reset  //////////////////////////////////////////////////
 unsigned long sns_opentherm_send_blor(struct OpenThermCommandT *self, struct OT_BOILER_STATUS_T *status)
 {
-    AddLog(LOG_LEVEL_ERROR, PSTR("[OTH]: Call Boiler Lock-out Reset"));
-    
     self->m_flags.skip = true; // Disable future calls of this command
 
     unsigned int data = 1; //1 : “BLOR”= Boiler Lock-out Reset command
@@ -457,7 +455,7 @@ unsigned long sns_opentherm_send_blor(struct OpenThermCommandT *self, struct OT_
     return OpenTherm::buildRequest(OpenThermMessageType::OPTH_WRITE_DATA, OpenThermMessageID::Command, data);
 }
 
-bool sns_opentherm_call_blor() 
+bool sns_opentherm_call_blor()
 {
     for (int i = 0; i < SNS_OT_COMMANDS_COUNT; ++i)
     {
@@ -586,7 +584,7 @@ void sns_opentherm_process_success_response(struct OT_BOILER_STATUS_T *boilerSta
     cmd->m_ot_parse_response(cmd, boilerStatus, response);
 }
 
-void sns_opentherm_dump_telemetry()
+void sns_opentherm_dump_telemetry(bool web)
 {
     for (int i = 0; i < SNS_OT_COMMANDS_COUNT; ++i)
     {
@@ -596,6 +594,13 @@ void sns_opentherm_dump_telemetry()
             continue;
         }
 
+        /*if (web) {
+            cmd->m_ot_appent_telemetry(cmd, true);
+        }
+        else {
+            ResponseAppend_P(PSTR(",\"%s\":"), cmd->m_command_name);
+            cmd->m_ot_appent_telemetry(cmd, false);
+        }*/
         ResponseAppend_P(PSTR(",\"%s\":"), cmd->m_command_name);
         cmd->m_ot_appent_telemetry(cmd);
     }
