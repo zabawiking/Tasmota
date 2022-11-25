@@ -17,6 +17,10 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+/*
+    JZ CUSTOM
+*/
+
 #ifdef USE_OPENTHERM
 
 #define XSNS_69 69
