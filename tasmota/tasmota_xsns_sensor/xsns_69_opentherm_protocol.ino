@@ -36,7 +36,7 @@ typedef union {
         uint8_t notSupported : 1; // If set, boiler does not support this command
         uint8_t supported : 1;    // Set if at least one response were successfull
         uint8_t retryCount : 2;   // Retry counter before notSupported flag being set
-        uint8_t skip : 1;       // Only manual call        
+        uint8_t skip : 1;       // Only manual call
     };
 } OpenThermParamFlags;
 
@@ -56,7 +56,7 @@ typedef struct OpenThermCommandT
     ResponseStorage m_results[2];
     unsigned long (*m_ot_make_request)(OpenThermCommandT *self, OT_BOILER_STATUS_T *boilerStatus);
     void (*m_ot_parse_response)(OpenThermCommandT *self, OT_BOILER_STATUS_T *boilerStatus, unsigned long response);
-    void (*m_ot_appent_telemetry)(OpenThermCommandT *self);
+    void (*m_ot_appent_telemetry)(OpenThermCommandT *self, bool web);
 } OpenThermCommand;
 
 OpenThermCommand sns_opentherm_commands[] = {
@@ -126,7 +126,7 @@ OpenThermCommand sns_opentherm_commands[] = {
      .m_flags = 0,
      .m_results = {{.m_u8 = 0}, {.m_u8 = 0}},
      .m_ot_make_request = sns_opentherm_get_generic_float,
-     .m_ot_parse_response = sns_opentherm_parse_generic_float,
+     .m_ot_parse_response = sns_opentherm_parse_dhw_temperature,
      .m_ot_appent_telemetry = sns_opentherm_tele_generic_float},
     {// Read Outside temperature
      .m_command_name = "TOUT",
@@ -150,7 +150,7 @@ OpenThermCommand sns_opentherm_commands[] = {
      .m_flags = 0,
      .m_results = {{.m_u8 = 0}, {.m_u8 = 0}},
      .m_ot_make_request = sns_opentherm_get_generic_float,
-     .m_ot_parse_response = sns_opentherm_parse_dhw_setpoint,
+     .m_ot_parse_response = sns_opentherm_parse_generic_float,
      .m_ot_appent_telemetry = sns_opentherm_tele_generic_float},
     {// Read max CH water setpoint
      .m_command_name = "TMAX",
@@ -298,18 +298,20 @@ void sns_opentherm_parse_slave_flags(struct OpenThermCommandT *self, struct OT_B
 }
 
 #define OT_FLAG_TO_ON_OFF(status, flag) ((((status) & (flag)) != 0) ? 1 : 0)
-void sns_opentherm_tele_slave_flags(struct OpenThermCommandT *self)
+void sns_opentherm_tele_slave_flags(struct OpenThermCommandT *self, bool web)
 {
     unsigned long st = self->m_results[0].m_ul;
-    ResponseAppend_P(PSTR("{\"FAULT\":%d,\"CH\":%d,\"DHW\":%d,\"FL\":%d,\"COOL\":%d,\"CH2\":%d,\"DIAG\":%d,\"RAW\":%lu}"),
-                     OT_FLAG_TO_ON_OFF(st, 0x01),
-                     OT_FLAG_TO_ON_OFF(st, 0x02),
-                     OT_FLAG_TO_ON_OFF(st, 0x04),
-                     OT_FLAG_TO_ON_OFF(st, 0x08),
-                     OT_FLAG_TO_ON_OFF(st, 0x10),
-                     OT_FLAG_TO_ON_OFF(st, 0x20),
-                     OT_FLAG_TO_ON_OFF(st, 0x40),
-                     st);
+    if (!web) {
+        ResponseAppend_P(PSTR("{\"FAULT\":%d,\"CH\":%d,\"DHW\":%d,\"FL\":%d,\"COOL\":%d,\"CH2\":%d,\"DIAG\":%d,\"RAW\":%lu}"),
+                        OT_FLAG_TO_ON_OFF(st, 0x01),
+                        OT_FLAG_TO_ON_OFF(st, 0x02),
+                        OT_FLAG_TO_ON_OFF(st, 0x04),
+                        OT_FLAG_TO_ON_OFF(st, 0x08),
+                        OT_FLAG_TO_ON_OFF(st, 0x10),
+                        OT_FLAG_TO_ON_OFF(st, 0x20),
+                        OT_FLAG_TO_ON_OFF(st, 0x40),
+                        st);
+    }
 }
 
 /////////////////////////////////// Set Boiler Temperature //////////////////////////////////////////////////
@@ -340,7 +342,7 @@ void sns_opentherm_parse_set_boiler_temperature(struct OpenThermCommandT *self, 
 {
     self->m_results[1].m_float = OpenTherm::getFloat(response);
 }
-void sns_opentherm_tele_boiler_temperature(struct OpenThermCommandT *self)
+void sns_opentherm_tele_boiler_temperature(struct OpenThermCommandT *self, bool web)
 {
     char requested[FLOATSZ];
     dtostrfd(self->m_results[0].m_float, Settings->flag2.temperature_resolution, requested);
@@ -350,10 +352,12 @@ void sns_opentherm_tele_boiler_temperature(struct OpenThermCommandT *self)
     // indicate fault if tepmerature demand and actual setpoint are greater then tolerance
     bool isFault = abs(self->m_results[1].m_float - self->m_results[0].m_float) > OPENTHERM_BOILER_SETPOINT_TOLERANCE;
 
-    ResponseAppend_P(PSTR("{\"FAULT\":%d,\"REQ\":%s,\"ACT\": %s}"),
-                     (int)isFault,
-                     requested,
-                     actual);
+    if (!web) {
+        ResponseAppend_P(PSTR("{\"FAULT\":%d,\"REQ\":%s,\"ACT\": %s}"),
+                        (int)isFault,
+                        requested,
+                        actual);
+    }
 }
 
 /////////////////////////////////// Set Domestic Hot Water Temperature //////////////////////////////////////////////////
@@ -380,16 +384,18 @@ void sns_opentherm_parse_boiler_dhw_temperature(struct OpenThermCommandT *self, 
 {
     self->m_results[1].m_float = OpenTherm::getFloat(response);
 }
-void sns_opentherm_tele_boiler_dhw_temperature(struct OpenThermCommandT *self)
+void sns_opentherm_tele_boiler_dhw_temperature(struct OpenThermCommandT *self, bool web)
 {
-    char requested[FLOATSZ];
-    dtostrfd(self->m_results[0].m_float, Settings->flag2.temperature_resolution, requested);
-    char actual[FLOATSZ];
-    dtostrfd(self->m_results[1].m_float, Settings->flag2.temperature_resolution, actual);
+    if (!web) {
+        char requested[FLOATSZ];
+        dtostrfd(self->m_results[0].m_float, Settings->flag2.temperature_resolution, requested);
+        char actual[FLOATSZ];
+        dtostrfd(self->m_results[1].m_float, Settings->flag2.temperature_resolution, actual);
 
-    ResponseAppend_P(PSTR("{\"REQ\":%s,\"ACT\": %s}"),
-                     requested,
-                     actual);
+        ResponseAppend_P(PSTR("{\"REQ\":%s,\"ACT\": %s}"),
+                        requested,
+                        actual);
+    }
 }
 
 /////////////////////////////////// App Specific Fault Flags //////////////////////////////////////////////////
@@ -408,23 +414,39 @@ void sns_opentherm_parse_flags(struct OpenThermCommandT *self, struct OT_BOILER_
     self->m_results[1].m_u8 = oem_fault_code;
 }
 
-void sns_opentherm_tele_flags(struct OpenThermCommandT *self)
+void sns_opentherm_tele_flags(struct OpenThermCommandT *self, bool web)
 {
-    ResponseAppend_P(PSTR("{\"FC\":%d,\"OFC\":%d}"),
-                     (int)self->m_results[0].m_u8,
-                     (int)self->m_results[1].m_u8);
+    if (!web) {
+        ResponseAppend_P(PSTR("{\"FC\":%d,\"OFC\":%d}"),
+                        (int)self->m_results[0].m_u8,
+                        (int)self->m_results[1].m_u8);
+    }
 }
 
-void sns_opentherm_tele_u8_u8(struct OpenThermCommandT *self)
+void sns_opentherm_tele_u8_u8(struct OpenThermCommandT *self, bool web)
 {
-    ResponseAppend_P(PSTR("{\"lo\":%d,\"hi\":%d}"),
-                     (int)self->m_results[0].m_u8,
-                     (int)self->m_results[1].m_u8);
+    if (!web) {
+        ResponseAppend_P(PSTR("{\"lo\":%d,\"hi\":%d}"),
+                        (int)self->m_results[0].m_u8,
+                        (int)self->m_results[1].m_u8);
+    }
+    else {
+        ResponseAppend_P(PSTR("{\"lo\":%d,\"hi\":%d}"),
+                        (int)self->m_results[0].m_u8,
+                        (int)self->m_results[1].m_u8);
+    }
 }
 
-void sns_opentherm_tele_u16(struct OpenThermCommandT *self)
+void sns_opentherm_tele_u16(struct OpenThermCommandT *self, bool web)
 {
-    ResponseAppend_P(PSTR("%d"), (int)self->m_results[0].m_u16);
+    if (web) {
+        WSContentSend_P(PSTR("{s}%s {m}%d{e}"),
+            self->m_command_name,
+            (int)self->m_results[0].m_u16);
+    }
+    else {
+        ResponseAppend_P(PSTR("%d"), (int)self->m_results[0].m_u16);
+    }
 }
 
 /////////////////////////////////// OEM Diag Code //////////////////////////////////////////////////
@@ -440,9 +462,16 @@ void sns_opentherm_parse_oem_diag(struct OpenThermCommandT *self, struct OT_BOIL
     self->m_results[0].m_u16 = diag_code;
 }
 
-void sns_opentherm_tele_oem_diag(struct OpenThermCommandT *self)
+void sns_opentherm_tele_oem_diag(struct OpenThermCommandT *self, bool web)
 {
-    ResponseAppend_P(PSTR("%d"), (int)self->m_results[0].m_u16);
+    if (web) {
+        WSContentSend_P(PSTR("{s}%s {m}%d{e}"),
+            self->m_command_name,
+            (int)self->m_results[0].m_u16);
+    }
+    else {
+        ResponseAppend_P(PSTR("%d"), (int)self->m_results[0].m_u16);
+    }
 }
 
 /////////////////////////////////// Boiler Boiler Lock-out Reset  //////////////////////////////////////////////////
@@ -480,11 +509,18 @@ void sns_opentherm_parse_generic_float(struct OpenThermCommandT *self, struct OT
     self->m_results[0].m_float = OpenTherm::getFloat(response);
 }
 
-void sns_opentherm_tele_generic_float(struct OpenThermCommandT *self)
+void sns_opentherm_tele_generic_float(struct OpenThermCommandT *self, bool web)
 {
     char str[FLOATSZ];
     dtostrfd(self->m_results[0].m_float, Settings->flag2.temperature_resolution, str);
-    ResponseAppend_P(PSTR("%s"), str);
+    if (web) {
+        WSContentSend_P(PSTR("{s}%s {m}%s{e}"),
+            self->m_command_name,
+            str);
+    }
+    else {
+        ResponseAppend_P(PSTR("%s"), str);
+    }
 }
 
 /////////////////////////////////// Generic U16 /////////////////////////////////////////////////
@@ -498,13 +534,20 @@ void sns_opentherm_parse_generic_u16(struct OpenThermCommandT *self, struct OT_B
     self->m_results[0].m_u16 = response & 0xFFFF;
 }
 
-void sns_opentherm_tele_generic_u16(struct OpenThermCommandT *self)
+void sns_opentherm_tele_generic_u16(struct OpenThermCommandT *self, bool web)
 {
-    ResponseAppend_P(PSTR("%d"), self->m_results[0].m_u16);
+    if (web) {
+        WSContentSend_P(PSTR("{s}%s {m}%d{e}"),
+            self->m_command_name,
+            self->m_results[0].m_u16);
+    }
+    else {
+        ResponseAppend_P(PSTR("%d"), self->m_results[0].m_u16);
+    }
 }
 
 /////////////////////////////////// Specific Floats Rerports to the  /////////////////////////////////////////////////
-void sns_opentherm_parse_dhw_setpoint(struct OpenThermCommandT *self, struct OT_BOILER_STATUS_T *boilerStatus, unsigned long response)
+void sns_opentherm_parse_dhw_temperature(struct OpenThermCommandT *self, struct OT_BOILER_STATUS_T *boilerStatus, unsigned long response)
 {
     self->m_results[0].m_float = OpenTherm::getFloat(response);
     boilerStatus->m_hotWaterSetpoint_read = self->m_results[0].m_float;
@@ -594,15 +637,13 @@ void sns_opentherm_dump_telemetry(bool web)
             continue;
         }
 
-        /*if (web) {
+        if (web) {
             cmd->m_ot_appent_telemetry(cmd, true);
         }
         else {
             ResponseAppend_P(PSTR(",\"%s\":"), cmd->m_command_name);
             cmd->m_ot_appent_telemetry(cmd, false);
-        }*/
-        ResponseAppend_P(PSTR(",\"%s\":"), cmd->m_command_name);
-        cmd->m_ot_appent_telemetry(cmd);
+        }
     }
 }
 
