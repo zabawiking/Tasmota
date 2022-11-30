@@ -193,7 +193,7 @@ OpenThermCommand sns_opentherm_commands[] = {
      .m_ot_parse_response = sns_opentherm_parse_generic_u16,
      .m_ot_appent_telemetry = sns_opentherm_tele_u8_u8},
     {// Read Water pressure in CH circuit
-     .m_command_name = "OT18",
+     .m_command_name = "CHPRESSURE",
      .m_command_code = (uint8_t)OpenThermMessageID::CHPressure,
      .m_flags = 0,
      .m_results = {{.m_u8 = 0}, {.m_u8 = 0}},

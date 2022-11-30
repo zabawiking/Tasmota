@@ -25,7 +25,7 @@
 
 #define XSNS_05              5
 
-//#define USE_DS18x20_RECONFIGURE    // When sensor is lost keep retrying or re-configure
+#define USE_DS18x20_RECONFIGURE    // When sensor is lost keep retrying or re-configure
 //#define DS18x20_USE_ID_AS_NAME      // Use last 3 bytes for naming of sensors
       
 /* #define DS18x20_USE_ID_ALIAS in my_user_config.h or user_config_override.h

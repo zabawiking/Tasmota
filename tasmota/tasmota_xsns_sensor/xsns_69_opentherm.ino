@@ -267,16 +267,17 @@ void sns_opentherm_stat(bool json)
         WSContentSend_P(PSTR("{s}OEM Diagnostic Code{m}%d{e}"),
                         (int)sns_ot_boiler_status.m_oem_diag_code);
 
+        WSContentSend_P(PSTR("{s}Boiler Temp/Setpnt{m}%d / %d{e}"),
+                        (int)sns_ot_boiler_status.m_boiler_temperature_read,
+                        (int)sns_ot_boiler_status.m_boilerSetpoint);
+
         WSContentSend_P(PSTR("{s}Hot Water Temp/Setpnt{m}%d / %d{e}"),
                         (int)sns_ot_boiler_status.m_hotWaterSetpoint_read,
                         (int)sns_ot_boiler_status.m_hotWaterSetpoint);
 
-        WSContentSend_P(PSTR("{s}Flame Modulation{m}%d{e}"),
+        WSContentSend_P(PSTR("{s}Flame Status/Modulation{m}%s / %d{e}"),
+                        OpenTherm::isFlameOn(sns_ot_boiler_status.m_slave_raw_status) ? "ON" : "OFF",
                         (int)sns_ot_boiler_status.m_flame_modulation_read);
-
-        WSContentSend_P(PSTR("{s}Boiler Temp/Setpnt{m}%d / %d{e}"),
-                        (int)sns_ot_boiler_status.m_boiler_temperature_read,
-                        (int)sns_ot_boiler_status.m_boilerSetpoint);
 
         WSContentSend_P(PSTR("{s}Central Heating is {m}%s / %s{e}"),
                         sns_ot_boiler_status.m_enableCentralHeating ? "ACTIVE" : "INACTIVE",
@@ -285,8 +286,6 @@ void sns_opentherm_stat(bool json)
         WSContentSend_P(PSTR("{s}Hot Water is {m}%s / %s{e}"),
                         sns_ot_boiler_status.m_enableHotWater ? "ACTIVE" : "INACTIVE",
                         OpenTherm::isHotWaterActive(sns_ot_boiler_status.m_slave_raw_status) ? "ON" : "OFF");
-
-        WSContentSend_P(PSTR("{s}Flame is {m}%s {e}"), OpenTherm::isFlameOn(sns_ot_boiler_status.m_slave_raw_status) ? "ON" : "OFF");
 
         WSContentSend_P(PSTR("{s}Cooling is {m}%s / %s{e}"),
             sns_ot_boiler_status.m_enableCooling ? "ACTIVE" : "INACTIVE",
@@ -298,9 +297,41 @@ void sns_opentherm_stat(bool json)
         }
 
         sns_opentherm_dump_telemetry(true);
+//cm?cmnd=ot_dhw%200
+        WSContentSend_P(HTTP_TABLE100);
+        WSContentSend_P(PSTR("<tr>"));
+
+        if (sns_ot_boiler_status.m_enableCentralHeating)
+            WSContentSend_P(PSTR("<td style='width:%d%%'><button onclick='la(\"&ot_ch=%d\");'>%s</button></td>"), 50, 0, "Turn CH OFF");
+        else
+            WSContentSend_P(PSTR("<td style='width:%d%%'><button onclick='la(\"&ot_ch=%d\");'>%s</button></td>"), 50, 1, "Turn CH ON");
+
+        if (sns_ot_boiler_status.m_enableHotWater)
+            WSContentSend_P(PSTR("<td style='width:%d%%'><button onclick='la(\"&ot_dhw=%d\");'>%s</button></td>"), 50, 0, "Turn DHW OFF");
+        else
+            WSContentSend_P(PSTR("<td style='width:%d%%'><button onclick='la(\"&ot_dhw=%d\");'>%s</button></td>"), 50, 1, "Turn DHW ON");
+
+        WSContentSend_P(PSTR("</tr><tr><td colspan='2'>&nbsp;</td></tr></table>"));
 
 #endif // USE_WEBSERVER
     }
+}
+
+void sns_opentherm_web_get_arg(void) {
+  char value[8];
+  char command[20];
+
+  WebGetArg(PSTR("ot_ch"), value, sizeof(value));
+  if (strlen(value)) {
+    snprintf_P(command, sizeof(command), PSTR("ot_ch %s"), value);
+    ExecuteWebCommand(command);
+  }
+
+  WebGetArg(PSTR("ot_dhw"), value, sizeof(value));
+  if (strlen(value)) {
+    snprintf_P(command, sizeof(command), PSTR("ot_dhw %s"), value);
+    ExecuteWebCommand(command);
+  }
 }
 
 void sns_ot_start_handshake()
@@ -467,7 +498,7 @@ uint8_t sns_opentherm_read_flags(char *data, uint32_t len)
 // flag value, however, this command does not update the settings.
 #define D_CMND_SET_HOT_WATER_ENABLED "dhw"
 
-// BLOR - Reset boiler 
+// BLOR - Reset boiler
 #define D_CMND_BLLOR "blor"
 
 const char kOpenThermCommands[] PROGMEM = D_PRFX_OTHERM "|" D_CMND_OTHERM_BOILER_SETPOINT "|" D_CMND_OTHERM_DHW_SETPOINT
@@ -632,6 +663,9 @@ bool Xsns69(uint8_t function)
 #ifdef USE_WEBSERVER
     case FUNC_WEB_SENSOR:
         sns_opentherm_stat(0);
+        break;
+    case FUNC_WEB_GET_ARG:
+        sns_opentherm_web_get_arg();
         break;
 #endif // USE_WEBSERVER
     }
