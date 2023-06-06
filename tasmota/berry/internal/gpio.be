@@ -255,3 +255,5 @@ gpio.ZEROCROSS = 236
 gpio.HALLEFFECT = 237
 gpio.SENSOR_END = 238
 gpio.ADC_MQ = 239
+gpio.EASUN_RX = 240
+gpio.EASUN_TX = 241

@@ -35,6 +35,8 @@ const be_const_member_t lv_gpio_constants[] = {
     { "BL6523_TX", (int32_t) GPIO_BL6523_TX },
     { "BOILER_OT_RX", (int32_t) GPIO_BOILER_OT_RX },
     { "BOILER_OT_TX", (int32_t) GPIO_BOILER_OT_TX },
+    { "EASUN_RX", (int32_t) GPIO_EASUN_RX },
+    { "EASUN_TX", (int32_t) GPIO_EASUN_TX },
     { "BS814_CLK", (int32_t) GPIO_BS814_CLK },
     { "BS814_DAT", (int32_t) GPIO_BS814_DAT },
     { "BUZZER", (int32_t) GPIO_BUZZER },

@@ -1045,6 +1045,11 @@
 #define D_SENSOR_BOILER_OT_RX   "OpenTherm RX"
 #define D_SENSOR_BOILER_OT_TX   "OpenTherm TX"
 
+// xsnx_101_easuniverter.ino
+#define D_SENSOR_EASUN_RX   "EASunInverter RX"
+#define D_SENSOR_EASUN_TX   "EASunInverter TX"
+
+
 // xnrg_15_teleinfo Denky (Teleinfo)
 #define D_CONTRACT        "Contracte"
 #define D_POWER_LOAD      "Càrrega de potència"

@@ -201,6 +201,7 @@
 //#define USE_AS608                                // Add support for AS608 optical and R503 capacitive fingerprint sensor (+3k4 code)
 //#define USE_TFMINIPLUS                           // Add suppoer for TFmini Plus (TFmini, TFmini-S) LiDAR modules via UART interface
 //#define USE_HRG15                                // Add support for Hydreon RG-15 Solid State Rain sensor (+1k5 code)
+//#define USE_EASUNINVERTER
 
 #define USE_ENERGY_SENSOR                        // Add energy sensors (-14k code)
 #define USE_PZEM004T                             // Add support for PZEM004T Energy monitor (+2k code)
@@ -466,6 +467,7 @@
 #undef USE_OPENTHERM                             // Disable support for OpenTherm (+15k code)
 #undef USE_MIEL_HVAC                             // Disable support for Mitsubishi Electric HVAC serial interface (+5k code)
 #undef USE_PROJECTOR_CTRL                        // Disable support for LCD/DLP Projector serial control interface
+#undef USE_EASUNINVERTER
 
 #undef USE_DHT                                   // Disable support for DHT11, AM2301 (DHT21, DHT22, AM2302, AM2321) and SI7021 Temperature and Humidity sensor
 #undef USE_MAX31855                              // Disable MAX31855 K-Type thermocouple sensor using softSPI
@@ -597,6 +599,7 @@
 #undef USE_OPENTHERM                             // Disable support for OpenTherm (+15k code)
 #undef USE_MIEL_HVAC                             // Disable support for Mitsubishi Electric HVAC serial interface (+5k code)
 #undef USE_PROJECTOR_CTRL                        // Disable support for LCD/DLP Projector serial control interface
+#undef USE_EASUNINVERTER
 
 #undef USE_ENERGY_SENSOR                         // Disable energy sensors
 #undef USE_ADE7880                               // Disable ADE7880 Energy monitor as used on Shelly 3EM (I2C address 0x38) (+3k8)
@@ -750,6 +753,7 @@
 #undef USE_TFMINIPLUS                            // Disable support for TFmini Plus (TFmini, TFmini-S) LiDAR modules via UART interface (+0k8)
 #undef USE_HRG15                                 // Disable support for Hydreon RG-15 Solid State Rain sensor (+1k5 code)
 #undef USE_VINDRIKTNING                          // Disable support for IKEA VINDRIKTNING particle concentration sensor (+1k code)
+#undef USE_EASUNINVERTER
 
 #undef USE_ENERGY_SENSOR                         // Disable energy sensors
 #undef USE_PZEM004T                              // Disable PZEM004T energy sensor
@@ -904,6 +908,7 @@
 #undef USE_TFMINIPLUS                            // Disable support for TFmini Plus (TFmini, TFmini-S) LiDAR modules via UART interface (+0k8)
 #undef USE_HRG15                                 // Disable support for Hydreon RG-15 Solid State Rain sensor (+1k5 code)
 #undef USE_VINDRIKTNING                          // Disable support for IKEA VINDRIKTNING particle concentration sensor (+0k6 code)
+#undef USE_EASUNINVERTER
 
 #undef USE_ENERGY_SENSOR                         // Disable energy sensors
 

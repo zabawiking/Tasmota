@@ -840,7 +840,9 @@ void ResponseAppendFeatures(void)
 #if defined(USE_ENERGY_SENSOR) && defined(USE_MODBUS_ENERGY)
     feature9 |= 0x00000010;  // xnrg_29_modbus.ino
 #endif
-//    feature9 |= 0x00000020;
+#if defined(USE_EASUNINVERTER)
+    feature9 |= 0x00000020;  // xsnx_101_easuniverter.ino
+#endif
 //    feature9 |= 0x00000040;
 //    feature9 |= 0x00000080;
 
