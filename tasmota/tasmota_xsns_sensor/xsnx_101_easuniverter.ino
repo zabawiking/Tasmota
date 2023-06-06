@@ -216,7 +216,7 @@ void EasunSensorsShow(bool json)
 {
     if (json) {
         ResponseAppend_P(PSTR(",\"Easun\":{"));
-        ResponseAppend_P(PSTR(",\"CurrentMode\": \"%s\""), Easun.CurrentMode);
+        ResponseAppend_P(PSTR("\"CurrentMode\": \"%s\""), Easun.CurrentMode);
         ResponseAppend_P(PSTR(",\"GridVoltage\": %.1f"), Easun.GridVoltage);
         ResponseAppend_P(PSTR(",\"GridFrequency\": %.1f"), Easun.GridFrequency);
         ResponseAppend_P(PSTR(",\"ACOutputVoltage\": %.1f"), Easun.ACOutputVoltage);
