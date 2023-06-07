@@ -21,7 +21,6 @@ struct EASUN {
     char *buffer = nullptr;                 // Serial receive buffer
     int byteCounter = 0;                   // Index in serial receive buffer
     uint8_t cmdStatus = 0;                 // 0 - awaiting command, 1 - command send - waiting for rec, 2 - receiving, 3 - received ok
-    char* currentResponse;
 
     //QMOD
     char* CurrentMode;
@@ -48,13 +47,12 @@ struct EASUN {
 void EasunInit(void) {
     Easun.active = false;
     Easun.cmdStatus = 0;
-    Easun.currentResponse = nullptr;
     easunStatusCommandIndex = 0;
-    sns_easun_inverter_seconds = XSNS_101_COMMAND_PERIOD_SECONDS;
+    easunLoopSeconds = XSNS_101_COMMAND_PERIOD_SECONDS;
 
-    Easun.CurrentMode = (char*) "?";
-    Easun.DeviceStatus1 = (char*) "";
-    Easun.DeviceStatus2 = (char*) "";
+    Easun.CurrentMode = strdup("?");
+    Easun.DeviceStatus1 = strdup("00000000");
+    Easun.DeviceStatus2 = strdup("000");
     Easun.GridVoltage = 0.0;
     Easun.GridFrequency = 0.0;
     Easun.ACOutputVoltage = 0.0;
@@ -90,7 +88,7 @@ void EasunInit(void) {
             }
 
             AddLog(LOG_LEVEL_INFO, PSTR("[EASUN]: Opened serial port"));
-            sns_easun_inverter_seconds = XSNS_101_COMMAND_PERIOD_SECONDS;
+            easunLoopSeconds = XSNS_101_COMMAND_PERIOD_SECONDS;
             Easun.active = true;
             return;
         }
@@ -116,10 +114,12 @@ void EasunSerialInput(void)
             }
             else if (dataIn == 13) {// '<CR>' end
                 const char *command = easunStatusCommands[easunStatusCommandIndex];
-                if (Easun.byteCounter > 2)
-                    Easun.currentResponse = strndup(Easun.buffer, Easun.byteCounter - 2); // strip CRC
+                if (Easun.byteCounter > 2) {
+                    Easun.buffer[Easun.byteCounter - 1] = 0x00;
+                    Easun.buffer[Easun.byteCounter - 2] = 0x00;
+                }
 
-                AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: Command: %s, Response: %s"), command, Easun.currentResponse);
+                AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: Command: %s, Response: %s"), command, Easun.buffer);
 
                 Easun.cmdStatus = 3;
                 //parse
@@ -174,19 +174,19 @@ ushort CRC16XMODEM(char *buf, int len)
 
 void ParseReceivedData()
 {
-    if (Easun.currentResponse == nullptr)
+    if (Easun.buffer == nullptr)
         return;
 
-    if (strcmp("NAK", Easun.currentResponse) == 0)
+    if (strcmp("NAK", Easun.buffer) == 0)
         return;
 
     switch (easunStatusCommandIndex) {
         case 0: //QPIGS
         {
-            if (strlen(Easun.currentResponse) < 106)
+            if (Easun.byteCounter < 106)
                 return;
 
-            char *token = strtok(Easun.currentResponse, easunCommandSeparator);
+            char *token = strtok(Easun.buffer, easunCommandSeparator);
             int index = 0;
             while (token != nullptr)
             {
@@ -204,8 +204,8 @@ void ParseReceivedData()
                 if (index == 12) Easun.PVInputCurrent = CharToFloat(token);
                 if (index == 13) Easun.PVInputVoltage = CharToFloat(token);
                 if (index == 15) Easun.BatteryDischargeCurrent = CharToFloat(token);
-                if (index == 16) Easun.DeviceStatus1 = strdup(token);
-                if (index == 20) Easun.DeviceStatus2 = strdup(token);
+                if (index == 16) strncpy(Easun.DeviceStatus1, token, 8);
+                if (index == 20) strncpy(Easun.DeviceStatus2, token, 3);
                 if (index == 19) Easun.PVChargingPower = CharToFloat(token);
 
                 token = strtok(nullptr, easunCommandSeparator);
@@ -216,7 +216,7 @@ void ParseReceivedData()
         }
         case 1: //QMOD
         {
-            Easun.CurrentMode = strndup(Easun.currentResponse, 1);
+            strncpy(Easun.CurrentMode, Easun.buffer, 1);
             AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: QMOD parsed OK"));
             break;
         }
@@ -251,21 +251,29 @@ void EasunSensorsShow(bool json)
     else {
         WSContentSend_P(PSTR("<tr><th colspan=\"2\"><hr/></th></tr>"));
         WSContentSend_P(PSTR("{s}CurrentMode{m}%s{e}"), Easun.CurrentMode);
+        WSContentSend_P(PSTR("{s}PVChargingPower{m}%.0f W{e}"), Easun.PVChargingPower);
+        WSContentSend_P(PSTR("{s}ACOutputActivePower{m}%.0f W{e}"), Easun.ACOutputActivePower);
+        WSContentSend_P(PSTR("{s}ACOutputLoadPercent{m}%.0f %%{e}"), Easun.ACOutputLoadPercent);
+
+        WSContentSend_P(PSTR("<tr><th colspan=\"2\"><hr/></th></tr>"));
         WSContentSend_P(PSTR("{s}GridVoltage{m}%.1f V{e}"), Easun.GridVoltage);
         WSContentSend_P(PSTR("{s}GridFrequency{m}%.1f Hz{e}"), Easun.GridFrequency);
         WSContentSend_P(PSTR("{s}ACOutputVoltage{m}%.1f V{e}"), Easun.ACOutputVoltage);
         WSContentSend_P(PSTR("{s}ACOutputFrequency{m}%.1f Hz{e}"), Easun.ACOutputFrequency);
-        WSContentSend_P(PSTR("{s}ACOutputActivePower{m}%.0f W{e}"), Easun.ACOutputActivePower);
-        WSContentSend_P(PSTR("{s}ACOutputLoadPercent{m}%.0f %%{e}"), Easun.ACOutputLoadPercent);
-        WSContentSend_P(PSTR("{s}BusVoltage{m}%.0f V{e}"), Easun.BusVoltage);
+
+        WSContentSend_P(PSTR("<tr><th colspan=\"2\"><hr/></th></tr>"));
         WSContentSend_P(PSTR("{s}BatteryVoltage{m}%.1f V{e}"), Easun.BatteryVoltage);
         WSContentSend_P(PSTR("{s}BatteryChargingCurrent{m}%.0f A{e}"), Easun.BatteryChargingCurrent);
         WSContentSend_P(PSTR("{s}BatteryDischargeCurrent{m}%.0f A{e}"), Easun.BatteryDischargeCurrent);
         WSContentSend_P(PSTR("{s}BatteryCapacityPercent{m}%.0f %%{e}"), Easun.BatteryCapacityPercent);
-        WSContentSend_P(PSTR("{s}InverterTemperature{m}%.0f{e}"), Easun.InverterTemperature);
+
+        WSContentSend_P(PSTR("<tr><th colspan=\"2\"><hr/></th></tr>"));
         WSContentSend_P(PSTR("{s}PVInputCurrent{m}%.1f A{e}"), Easun.PVInputCurrent);
         WSContentSend_P(PSTR("{s}PVInputVoltage{m}%.1f V{e}"), Easun.PVInputVoltage);
-        WSContentSend_P(PSTR("{s}PVChargingPower{m}%.0f W{e}"), Easun.PVChargingPower);
+
+        WSContentSend_P(PSTR("<tr><th colspan=\"2\"><hr/></th></tr>"));
+        WSContentSend_P(PSTR("{s}BusVoltage{m}%.0f V{e}"), Easun.BusVoltage);
+        WSContentSend_P(PSTR("{s}InverterTemperature{m}%.0f{e}"), Easun.InverterTemperature);
         WSContentSend_P(PSTR("{s}DeviceStatus1{m}%s{e}"), Easun.DeviceStatus1);
         WSContentSend_P(PSTR("{s}DeviceStatus2{m}%s{e}"), Easun.DeviceStatus2);
         WSContentSend_P(PSTR("<tr><th colspan=\"2\"><hr/></th></tr>"));
