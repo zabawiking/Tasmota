@@ -3,14 +3,14 @@
 #define XSNS_101 101
 #define XSNS_101_COMMAND_PERIOD_SECONDS 10;
 
-int sns_easun_inverter_seconds = 0;
+int easunLoopSeconds = 0;
 
 #define EASUN_BUFFER_SIZE       256
 
 //QPIGS => rec 108
 int easunStatusCommandIndex = 0;
-const char* easunStatusCommands[] PROGMEM = { "QPIGS", "QMOD" };
-const char *commandSeparator PROGMEM = const_cast<char *>(" ");
+const char* easunStatusCommands[] PROGMEM = { "QPIGS", "QMOD" };//, "QPIRI", "QPIWS" };
+const char *easunCommandSeparator PROGMEM = const_cast<char *>(" ");
 const int easunStatusCommandSize = sizeof(easunStatusCommands) / sizeof(char*);
 
 #include <TasmotaSerial.h>
@@ -41,18 +41,20 @@ struct EASUN {
     float PVInputVoltage;
     float BatteryDischargeCurrent;
     float PVChargingPower;
-    char* EasunDeviceStatus1;
-    char* EasunDeviceStatus2;
+    char* DeviceStatus1;
+    char* DeviceStatus2;
 } Easun;
 
 void EasunInit(void) {
     Easun.active = false;
     Easun.cmdStatus = 0;
+    Easun.currentResponse = nullptr;
     easunStatusCommandIndex = 0;
+    sns_easun_inverter_seconds = XSNS_101_COMMAND_PERIOD_SECONDS;
 
     Easun.CurrentMode = (char*) "?";
-    Easun.EasunDeviceStatus1 = (char*) "";
-    Easun.EasunDeviceStatus2 = (char*) "";
+    Easun.DeviceStatus1 = (char*) "";
+    Easun.DeviceStatus2 = (char*) "";
     Easun.GridVoltage = 0.0;
     Easun.GridFrequency = 0.0;
     Easun.ACOutputVoltage = 0.0;
@@ -100,39 +102,41 @@ void EasunInit(void) {
 
 void EasunSerialInput(void)
 {
-  while (EasunSerial->available()) {
-    yield();
-    uint8_t dataIn = EasunSerial->read();
-    if (Easun.cmdStatus == 1 && dataIn == 40) {// '(' start
-        Easun.cmdStatus = 2;
-        Easun.byteCounter = 0;
-    }
-    else if (Easun.cmdStatus == 2) {
-        if (Easun.byteCounter >= EASUN_BUFFER_SIZE - 1) {
-            Easun.cmdStatus = 0;
+    while (EasunSerial->available()) {
+        yield();
+        uint8_t dataIn = EasunSerial->read();
+        if (Easun.cmdStatus == 1 && dataIn == 40) {// '(' start
+            Easun.cmdStatus = 2;
             Easun.byteCounter = 0;
         }
-        else if (dataIn == 13) {// '<CR>' end
-            const char *command = easunStatusCommands[easunStatusCommandIndex];
-            if (Easun.byteCounter > 2)
-                Easun.currentResponse = strndup(Easun.buffer, Easun.byteCounter - 2); // strip CRC
+        else if (Easun.cmdStatus == 2) {
+            if (Easun.byteCounter >= EASUN_BUFFER_SIZE - 1) {
+                Easun.cmdStatus = 0;
+                Easun.byteCounter = 0;
+            }
+            else if (dataIn == 13) {// '<CR>' end
+                const char *command = easunStatusCommands[easunStatusCommandIndex];
+                if (Easun.byteCounter > 2)
+                    Easun.currentResponse = strndup(Easun.buffer, Easun.byteCounter - 2); // strip CRC
 
-            AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: Command: %s, Response: %s"), command, Easun.currentResponse);
-            Easun.cmdStatus = 3;
-            //parse
-            ParseReceivedData();
+                AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: Command: %s, Response: %s"), command, Easun.currentResponse);
 
-            //send another commmand
-            Easun.cmdStatus = 0;
-            easunStatusCommandIndex++;
-            if (easunStatusCommandIndex >= easunStatusCommandSize)
-                easunStatusCommandIndex = 0;
-        }
-        else {
-            Easun.buffer[Easun.byteCounter++] = dataIn;
+                Easun.cmdStatus = 3;
+                //parse
+                ParseReceivedData();
+
+                //send another commmand
+                easunStatusCommandIndex++;
+                if (easunStatusCommandIndex >= easunStatusCommandSize)
+                    easunStatusCommandIndex = 0;
+
+                Easun.cmdStatus = 0;
+            }
+            else {
+                Easun.buffer[Easun.byteCounter++] = dataIn;
+            }
         }
     }
-  }
 }
 
 void EasunSendStatusCommand()
@@ -165,48 +169,55 @@ ushort CRC16XMODEM(char *buf, int len)
                 crc = (ushort)(crc << 1);
         }
     }
-
-    // lo-hi
     return crc;
-
-    // ..or
-    // hi-lo reordered
-    //return (ushort)((crc >> 8) | (crc << 8));
 }
 
 void ParseReceivedData()
 {
+    if (Easun.currentResponse == nullptr)
+        return;
+
+    if (strcmp("NAK", Easun.currentResponse) == 0)
+        return;
+
     switch (easunStatusCommandIndex) {
         case 0: //QPIGS
         {
-            char *token = strtok(Easun.currentResponse, commandSeparator);
+            if (strlen(Easun.currentResponse) < 106)
+                return;
+
+            char *token = strtok(Easun.currentResponse, easunCommandSeparator);
             int index = 0;
             while (token != nullptr)
             {
-                if (index == 0) Easun.GridVoltage = atof(token);
-                if (index == 1) Easun.GridFrequency = atof(token);
-                if (index == 2) Easun.ACOutputVoltage = atof(token);
-                if (index == 3) Easun.ACOutputFrequency = atof(token);
-                if (index == 5) Easun.ACOutputActivePower = atof(token);
-                if (index == 6) Easun.ACOutputLoadPercent = atof(token);
-                if (index == 7) Easun.BusVoltage = atof(token);
-                if (index == 8) Easun.BatteryVoltage = atof(token);
-                if (index == 9) Easun.BatteryChargingCurrent = atof(token);
-                if (index == 10) Easun.BatteryCapacityPercent = atof(token);
-                if (index == 11) Easun.InverterTemperature = atof(token);
-                if (index == 12) Easun.PVInputCurrent = atof(token);
-                if (index == 13) Easun.PVInputVoltage = atof(token);
-                if (index == 15) Easun.BatteryDischargeCurrent = atof(token);
-                if (index == 19) Easun.PVChargingPower = atof(token);
+                if (index == 0) Easun.GridVoltage = CharToFloat(token);
+                if (index == 1) Easun.GridFrequency = CharToFloat(token);
+                if (index == 2) Easun.ACOutputVoltage = CharToFloat(token);
+                if (index == 3) Easun.ACOutputFrequency = CharToFloat(token);
+                if (index == 5) Easun.ACOutputActivePower = CharToFloat(token);
+                if (index == 6) Easun.ACOutputLoadPercent = CharToFloat(token);
+                if (index == 7) Easun.BusVoltage = CharToFloat(token);
+                if (index == 8) Easun.BatteryVoltage = CharToFloat(token);
+                if (index == 9) Easun.BatteryChargingCurrent = CharToFloat(token);
+                if (index == 10) Easun.BatteryCapacityPercent = CharToFloat(token);
+                if (index == 11) Easun.InverterTemperature = CharToFloat(token);
+                if (index == 12) Easun.PVInputCurrent = CharToFloat(token);
+                if (index == 13) Easun.PVInputVoltage = CharToFloat(token);
+                if (index == 15) Easun.BatteryDischargeCurrent = CharToFloat(token);
+                if (index == 16) Easun.DeviceStatus1 = strdup(token);
+                if (index == 20) Easun.DeviceStatus2 = strdup(token);
+                if (index == 19) Easun.PVChargingPower = CharToFloat(token);
 
-                token = strtok(nullptr, commandSeparator);
+                token = strtok(nullptr, easunCommandSeparator);
                 index++;
             }
+            AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: QPIGS parsed OK"));
             break;
         }
         case 1: //QMOD
         {
             Easun.CurrentMode = strndup(Easun.currentResponse, 1);
+            AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: QMOD parsed OK"));
             break;
         }
     }
@@ -226,33 +237,38 @@ void EasunSensorsShow(bool json)
         ResponseAppend_P(PSTR(",\"BusVoltage\": %.0f"), Easun.BusVoltage);
         ResponseAppend_P(PSTR(",\"BatteryVoltage\": %.2f"), Easun.BatteryVoltage);
         ResponseAppend_P(PSTR(",\"BatteryChargingCurrent\": %.0f"), Easun.BatteryChargingCurrent);
+        ResponseAppend_P(PSTR(",\"BatteryDischargeCurrent\": %.0f"), Easun.BatteryDischargeCurrent);
         ResponseAppend_P(PSTR(",\"BatteryCapacityPercent\": %.0f"), Easun.BatteryCapacityPercent);
         ResponseAppend_P(PSTR(",\"InverterTemperature\": %.0f"), Easun.InverterTemperature);
         ResponseAppend_P(PSTR(",\"PVInputCurrent\": %.1f"), Easun.PVInputCurrent);
         ResponseAppend_P(PSTR(",\"PVInputVoltage\": %.1f"), Easun.PVInputVoltage);
-        ResponseAppend_P(PSTR(",\"BatteryDischargeCurrent\": %.1f"), Easun.BatteryDischargeCurrent);
         ResponseAppend_P(PSTR(",\"PVChargingPower\": %.0f"), Easun.PVChargingPower);
+        ResponseAppend_P(PSTR(",\"DeviceStatus1\": %s"), Easun.DeviceStatus1);
+        ResponseAppend_P(PSTR(",\"DeviceStatus2\": %s"), Easun.DeviceStatus2);
         ResponseJsonEnd();
     }
     #ifdef USE_WEBSERVER
     else {
-        WSContentSend_PD("EASUN");
+        WSContentSend_P(PSTR("<tr><th colspan=\"2\"><hr/></th></tr>"));
         WSContentSend_P(PSTR("{s}CurrentMode{m}%s{e}"), Easun.CurrentMode);
-        WSContentSend_P(PSTR("{s}GridVoltage{m}%.1f{e}"), Easun.GridVoltage);
-        WSContentSend_P(PSTR("{s}GridFrequency{m}%.1f{e}"), Easun.GridFrequency);
-        WSContentSend_P(PSTR("{s}ACOutputVoltage{m}%.1f{e}"), Easun.ACOutputVoltage);
-        WSContentSend_P(PSTR("{s}ACOutputFrequency{m}%.1f{e}"), Easun.ACOutputFrequency);
-        WSContentSend_P(PSTR("{s}ACOutputActivePower{m}%.0f{e}"), Easun.ACOutputActivePower);
-        WSContentSend_P(PSTR("{s}ACOutputLoadPercent{m}%.0f{e}"), Easun.ACOutputLoadPercent);
-        WSContentSend_P(PSTR("{s}BusVoltage{m}%.0f{e}"), Easun.BusVoltage);
-        WSContentSend_P(PSTR("{s}BatteryVoltage{m}%.1f{e}"), Easun.BatteryVoltage);
-        WSContentSend_P(PSTR("{s}BatteryChargingCurrent{m}%.0f{e}"), Easun.BatteryChargingCurrent);
-        WSContentSend_P(PSTR("{s}BatteryCapacityPercent{m}%.0f{e}"), Easun.BatteryCapacityPercent);
+        WSContentSend_P(PSTR("{s}GridVoltage{m}%.1f V{e}"), Easun.GridVoltage);
+        WSContentSend_P(PSTR("{s}GridFrequency{m}%.1f Hz{e}"), Easun.GridFrequency);
+        WSContentSend_P(PSTR("{s}ACOutputVoltage{m}%.1f V{e}"), Easun.ACOutputVoltage);
+        WSContentSend_P(PSTR("{s}ACOutputFrequency{m}%.1f Hz{e}"), Easun.ACOutputFrequency);
+        WSContentSend_P(PSTR("{s}ACOutputActivePower{m}%.0f W{e}"), Easun.ACOutputActivePower);
+        WSContentSend_P(PSTR("{s}ACOutputLoadPercent{m}%.0f %%{e}"), Easun.ACOutputLoadPercent);
+        WSContentSend_P(PSTR("{s}BusVoltage{m}%.0f V{e}"), Easun.BusVoltage);
+        WSContentSend_P(PSTR("{s}BatteryVoltage{m}%.1f V{e}"), Easun.BatteryVoltage);
+        WSContentSend_P(PSTR("{s}BatteryChargingCurrent{m}%.0f A{e}"), Easun.BatteryChargingCurrent);
+        WSContentSend_P(PSTR("{s}BatteryDischargeCurrent{m}%.0f A{e}"), Easun.BatteryDischargeCurrent);
+        WSContentSend_P(PSTR("{s}BatteryCapacityPercent{m}%.0f %%{e}"), Easun.BatteryCapacityPercent);
         WSContentSend_P(PSTR("{s}InverterTemperature{m}%.0f{e}"), Easun.InverterTemperature);
-        WSContentSend_P(PSTR("{s}PVInputCurrent{m}%.1f{e}"), Easun.PVInputCurrent);
-        WSContentSend_P(PSTR("{s}PVInputVoltage{m}%.1f{e}"), Easun.PVInputVoltage);
-        WSContentSend_P(PSTR("{s}BatteryDischargeCurrent{m}%.1f{e}"), Easun.BatteryDischargeCurrent);
-        WSContentSend_P(PSTR("{s}PVChargingPower{m}%.0f{e}"), Easun.PVChargingPower);
+        WSContentSend_P(PSTR("{s}PVInputCurrent{m}%.1f A{e}"), Easun.PVInputCurrent);
+        WSContentSend_P(PSTR("{s}PVInputVoltage{m}%.1f V{e}"), Easun.PVInputVoltage);
+        WSContentSend_P(PSTR("{s}PVChargingPower{m}%.0f W{e}"), Easun.PVChargingPower);
+        WSContentSend_P(PSTR("{s}DeviceStatus1{m}%s{e}"), Easun.DeviceStatus1);
+        WSContentSend_P(PSTR("{s}DeviceStatus2{m}%s{e}"), Easun.DeviceStatus2);
+        WSContentSend_P(PSTR("<tr><th colspan=\"2\"><hr/></th></tr>"));
     }
     #endif
 }
@@ -281,11 +297,9 @@ bool Xsns101(uint8_t function)
     case FUNC_LOOP:
         if (EasunSerial) { EasunSerialInput(); }
         break;
-    case FUNC_EVERY_100_MSECOND:
-        break;
     case FUNC_EVERY_SECOND:
-        sns_easun_inverter_seconds--;
-        if (EasunSerial && sns_easun_inverter_seconds <= 0) {
+        easunLoopSeconds--;
+        if (EasunSerial && easunLoopSeconds <= 0) {
             if (Easun.cmdStatus != 0) {
                 AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: No response received, resetting COM PORT"));
                 EasunInit();
@@ -293,7 +307,7 @@ bool Xsns101(uint8_t function)
             else {
                 EasunSendStatusCommand();
             }
-            sns_easun_inverter_seconds = XSNS_101_COMMAND_PERIOD_SECONDS;
+            easunLoopSeconds = XSNS_101_COMMAND_PERIOD_SECONDS;
         }
 
         if (Easun.cmdStatus == 0 && easunStatusCommandIndex > 0) {
@@ -301,19 +315,15 @@ bool Xsns101(uint8_t function)
         }
         break;
     case FUNC_COMMAND:
-        //result = DecodeCommand(kOpenThermCommands, OpenThermCommands);
         break;
     case FUNC_JSON_APPEND:
         EasunSensorsShow(1);
-        break;
-    case FUNC_SERIAL:
         break;
 #ifdef USE_WEBSERVER
     case FUNC_WEB_SENSOR:
         EasunSensorsShow(0);
         break;
     case FUNC_WEB_GET_ARG:
-        //sns_opentherm_web_get_arg();
         break;
 #endif // USE_WEBSERVER
     }
