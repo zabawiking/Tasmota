@@ -9,7 +9,7 @@ int easunLoopSeconds = 0;
 
 //QPIGS => rec 108
 int easunStatusCommandIndex = 0;
-const char* easunStatusCommands[] PROGMEM = { "QPIGS", "QMOD" };//, "QPIRI", "QPIWS" };
+const char* easunStatusCommands[] PROGMEM = { "QPIGS", "QMOD", "QPIRI", "QPIWS" };
 const char *easunCommandSeparator PROGMEM = const_cast<char *>(" ");
 const int easunStatusCommandSize = sizeof(easunStatusCommands) / sizeof(char*);
 
@@ -31,6 +31,7 @@ struct EASUN {
     float ACOutputFrequency;
     float ACOutputActivePower;
     float ACOutputLoadPercent;
+    bool ACOutputOn;
     float BusVoltage;
     float BatteryVoltage;
     float BatteryChargingCurrent;
@@ -42,6 +43,11 @@ struct EASUN {
     float PVChargingPower;
     char* DeviceStatus1;
     char* DeviceStatus2;
+    bool BatteryCharging;
+    bool BatteryChargingSolar;
+    bool BatteryChargingAC;
+    bool BatteryChargingFloating;
+    bool BatteryVoltageSteady;
 } Easun;
 
 void EasunInit(void) {
@@ -59,6 +65,7 @@ void EasunInit(void) {
     Easun.ACOutputFrequency = 0.0;
     Easun.ACOutputActivePower = 0.0;
     Easun.ACOutputLoadPercent = 0.0;
+    Easun.ACOutputOn = false;
     Easun.BusVoltage = 0.0;
     Easun.BatteryVoltage = 0.0;
     Easun.BatteryChargingCurrent = 0.0;
@@ -68,6 +75,11 @@ void EasunInit(void) {
     Easun.PVInputVoltage = 0.0;
     Easun.BatteryDischargeCurrent = 0.0;
     Easun.PVChargingPower = 0.0;
+    Easun.BatteryCharging = false;
+    Easun.BatteryChargingSolar = false;
+    Easun.BatteryChargingAC = false;
+    Easun.BatteryChargingFloating = false;
+    Easun.BatteryVoltageSteady = false;
 
     if (EasunSerial != nullptr) {
         AddLog(LOG_LEVEL_INFO, PSTR("[EASUN]: Closing serial port"));
@@ -204,8 +216,18 @@ void ParseReceivedData()
                 if (index == 12) Easun.PVInputCurrent = CharToFloat(token);
                 if (index == 13) Easun.PVInputVoltage = CharToFloat(token);
                 if (index == 15) Easun.BatteryDischargeCurrent = CharToFloat(token);
-                if (index == 16) strncpy(Easun.DeviceStatus1, token, 8);
-                if (index == 20) strncpy(Easun.DeviceStatus2, token, 3);
+                if (index == 16) {
+                    strncpy(Easun.DeviceStatus1, token, 8);
+                    Easun.BatteryCharging = Easun.DeviceStatus1[5] == '1';
+                    Easun.BatteryChargingSolar = Easun.DeviceStatus1[6] == '1';
+                    Easun.BatteryChargingAC = Easun.DeviceStatus1[7] == '1';
+                    Easun.BatteryVoltageSteady = Easun.DeviceStatus1[4] == '1';
+                }
+                if (index == 20) {
+                    strncpy(Easun.DeviceStatus2, token, 3);
+                    Easun.BatteryChargingFloating = Easun.DeviceStatus2[0] == '1';
+                    Easun.ACOutputOn = Easun.DeviceStatus2[1] == '1';
+                }
                 if (index == 19) Easun.PVChargingPower = CharToFloat(token);
 
                 token = strtok(nullptr, easunCommandSeparator);
@@ -243,8 +265,15 @@ void EasunSensorsShow(bool json)
         ResponseAppend_P(PSTR(",\"PVInputCurrent\": %.1f"), Easun.PVInputCurrent);
         ResponseAppend_P(PSTR(",\"PVInputVoltage\": %.1f"), Easun.PVInputVoltage);
         ResponseAppend_P(PSTR(",\"PVChargingPower\": %.0f"), Easun.PVChargingPower);
-        ResponseAppend_P(PSTR(",\"DeviceStatus1\": %s"), Easun.DeviceStatus1);
-        ResponseAppend_P(PSTR(",\"DeviceStatus2\": %s"), Easun.DeviceStatus2);
+        ResponseAppend_P(PSTR(",\"DeviceStatus1\": \"%s\""), Easun.DeviceStatus1);
+        ResponseAppend_P(PSTR(",\"DeviceStatus2\": \"%s\""), Easun.DeviceStatus2);
+        ResponseAppend_P(PSTR(",\"ACOutputOn\": %d"), Easun.ACOutputOn);
+        ResponseAppend_P(PSTR(",\"BatteryCharging\": %d"), Easun.BatteryCharging);
+        ResponseAppend_P(PSTR(",\"BatteryChargingSolar\": %d"), Easun.BatteryChargingSolar);
+        ResponseAppend_P(PSTR(",\"BatteryChargingAC\": %d"), Easun.BatteryChargingAC);
+        ResponseAppend_P(PSTR(",\"BatteryChargingFloating\": %d"), Easun.BatteryChargingFloating);
+        ResponseAppend_P(PSTR(",\"BatteryVoltageSteady\": %d"), Easun.BatteryVoltageSteady);
+
         ResponseJsonEnd();
     }
     #ifdef USE_WEBSERVER
@@ -260,12 +289,18 @@ void EasunSensorsShow(bool json)
         WSContentSend_P(PSTR("{s}GridFrequency{m}%.1f Hz{e}"), Easun.GridFrequency);
         WSContentSend_P(PSTR("{s}ACOutputVoltage{m}%.1f V{e}"), Easun.ACOutputVoltage);
         WSContentSend_P(PSTR("{s}ACOutputFrequency{m}%.1f Hz{e}"), Easun.ACOutputFrequency);
+        WSContentSend_P(PSTR("{s}ACOutputOn{m}%d{e}"), Easun.ACOutputOn);
 
         WSContentSend_P(PSTR("<tr><th colspan=\"2\"><hr/></th></tr>"));
         WSContentSend_P(PSTR("{s}BatteryVoltage{m}%.1f V{e}"), Easun.BatteryVoltage);
         WSContentSend_P(PSTR("{s}BatteryChargingCurrent{m}%.0f A{e}"), Easun.BatteryChargingCurrent);
         WSContentSend_P(PSTR("{s}BatteryDischargeCurrent{m}%.0f A{e}"), Easun.BatteryDischargeCurrent);
         WSContentSend_P(PSTR("{s}BatteryCapacityPercent{m}%.0f %%{e}"), Easun.BatteryCapacityPercent);
+        WSContentSend_P(PSTR("{s}BatteryCharging{m}%d{e}"), Easun.BatteryCharging);
+        WSContentSend_P(PSTR("{s}BatteryChargingSolar{m}%d{e}"), Easun.BatteryChargingSolar);
+        WSContentSend_P(PSTR("{s}BatteryChargingAC{m}%d{e}"), Easun.BatteryChargingAC);
+        WSContentSend_P(PSTR("{s}BatteryChargingFloating{m}%d{e}"), Easun.BatteryChargingFloating);
+        WSContentSend_P(PSTR("{s}BatteryVoltageSteady{m}%d{e}"), Easun.BatteryVoltageSteady);
 
         WSContentSend_P(PSTR("<tr><th colspan=\"2\"><hr/></th></tr>"));
         WSContentSend_P(PSTR("{s}PVInputCurrent{m}%.1f A{e}"), Easun.PVInputCurrent);
