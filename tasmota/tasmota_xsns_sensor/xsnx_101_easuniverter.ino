@@ -8,13 +8,23 @@ int easunLoopSeconds = 0;
 #define EASUN_BUFFER_SIZE       256
 
 //QPIGS => rec 108
-int easunStatusCommandIndex = 0;
+//int easunStatusCommandIndex = 0;
 const char* easunStatusCommands[] PROGMEM = { "QPIGS", "QMOD", "QPIRI", "QPIWS" };
 const char *easunCommandSeparator PROGMEM = const_cast<char *>(" ");
 const int easunStatusCommandSize = sizeof(easunStatusCommands) / sizeof(char*);
 
+char* easunCommandBuffer[10];
+int easunCommandIndex = -1;
+
 #include <TasmotaSerial.h>
 TasmotaSerial *EasunSerial = nullptr;
+
+//commands
+#define D_PRFX_EASUN "ea_"
+const char kEasunCommand[] PROGMEM = D_PRFX_EASUN "|send";
+void (*const EasunCommand[])(void) PROGMEM = {
+    &EasunProcessCommand
+};
 
 struct EASUN {
     bool active;
@@ -53,7 +63,8 @@ struct EASUN {
 void EasunInit(void) {
     Easun.active = false;
     Easun.cmdStatus = 0;
-    easunStatusCommandIndex = 0;
+    //easunStatusCommandIndex = 0;
+    easunCommandIndex = -1;
     easunLoopSeconds = XSNS_101_COMMAND_PERIOD_SECONDS;
 
     Easun.CurrentMode = strdup("?");
@@ -125,22 +136,28 @@ void EasunSerialInput(void)
                 Easun.byteCounter = 0;
             }
             else if (dataIn == 13) {// '<CR>' end
-                const char *command = easunStatusCommands[easunStatusCommandIndex];
                 if (Easun.byteCounter > 2) {
                     Easun.buffer[Easun.byteCounter - 1] = 0x00;
                     Easun.buffer[Easun.byteCounter - 2] = 0x00;
                 }
 
-                AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: Command: %s, Response: %s"), command, Easun.buffer);
+                if (easunCommandIndex > -1) {
+                    Easun.cmdStatus = 3;
 
-                Easun.cmdStatus = 3;
-                //parse
-                ParseReceivedData();
+                    char *command = easunCommandBuffer[easunCommandIndex];
+                    AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: Command: %s, Response: %s, commandIndex: %d"), command, Easun.buffer, easunCommandIndex);
 
-                //send another commmand
-                easunStatusCommandIndex++;
-                if (easunStatusCommandIndex >= easunStatusCommandSize)
-                    easunStatusCommandIndex = 0;
+                    // ResponseClear();
+                    // Response_P(PSTR("{\"Easun\":{\"Command\":\"%s\", \"Response\":\"%s\"}}"), command, Easun.buffer);
+                    // MqttPublishPrefixTopicRulesProcess_P(RESULT_OR_CMND, PSTR("Easun"));
+                    //parse
+                    EasunParseReceivedData(command);
+
+                    free(easunCommandBuffer[easunCommandIndex]);
+                    easunCommandIndex--;
+                } else {
+                    AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: Response: %s"), Easun.buffer);
+                }
 
                 Easun.cmdStatus = 0;
             }
@@ -151,12 +168,23 @@ void EasunSerialInput(void)
     }
 }
 
-void EasunSendStatusCommand()
+void EasunEnqueueCommand(char *command)
 {
-    const char *command = easunStatusCommands[easunStatusCommandIndex];
+    if (easunCommandIndex < 10) {
+        easunCommandIndex++;
+        int commandSize = strlen(command);
+        easunCommandBuffer[easunCommandIndex] = new char[commandSize + 1];
+        strcpy(easunCommandBuffer[easunCommandIndex], command);
+        AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: Enqueue command: %s, commandIndex: %d"), command, easunCommandIndex);
+    }
+}
+
+void EasunSendCommand()
+{
+    const char *command = easunCommandBuffer[easunCommandIndex];
     int commandSize = strlen(command);
-    ushort crc = CRC16XMODEM((char*) command, strlen(command));
-    AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: Sending command: %s"), command);
+    ushort crc = EasunCRC16XMODEM((char*) command, strlen(command));
+    AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: Sending command: %s, commandIndex: %d"), command, easunCommandIndex);
     for (;commandSize > 0; commandSize--) {
         EasunSerial->write(*command++);
     }
@@ -167,7 +195,7 @@ void EasunSendStatusCommand()
     Easun.cmdStatus = 1;
 }
 
-ushort CRC16XMODEM(char *buf, int len)
+ushort EasunCRC16XMODEM(char *buf, int len)
 {
     ushort crc = 0;
     for (; len > 0; len--)
@@ -184,7 +212,7 @@ ushort CRC16XMODEM(char *buf, int len)
     return crc;
 }
 
-void ParseReceivedData()
+void EasunParseReceivedData(char *command)
 {
     if (Easun.buffer == nullptr)
         return;
@@ -192,56 +220,51 @@ void ParseReceivedData()
     if (strcmp("NAK", Easun.buffer) == 0)
         return;
 
-    switch (easunStatusCommandIndex) {
-        case 0: //QPIGS
+    if (strcmp("QPIGS", command) == 0) {
+        if (Easun.byteCounter < 106)
+            return;
+
+        char *token = strtok(Easun.buffer, easunCommandSeparator);
+        int index = 0;
+        while (token != nullptr)
         {
-            if (Easun.byteCounter < 106)
-                return;
-
-            char *token = strtok(Easun.buffer, easunCommandSeparator);
-            int index = 0;
-            while (token != nullptr)
-            {
-                if (index == 0) Easun.GridVoltage = CharToFloat(token);
-                if (index == 1) Easun.GridFrequency = CharToFloat(token);
-                if (index == 2) Easun.ACOutputVoltage = CharToFloat(token);
-                if (index == 3) Easun.ACOutputFrequency = CharToFloat(token);
-                if (index == 5) Easun.ACOutputActivePower = CharToFloat(token);
-                if (index == 6) Easun.ACOutputLoadPercent = CharToFloat(token);
-                if (index == 7) Easun.BusVoltage = CharToFloat(token);
-                if (index == 8) Easun.BatteryVoltage = CharToFloat(token);
-                if (index == 9) Easun.BatteryChargingCurrent = CharToFloat(token);
-                if (index == 10) Easun.BatteryCapacityPercent = CharToFloat(token);
-                if (index == 11) Easun.InverterTemperature = CharToFloat(token);
-                if (index == 12) Easun.PVInputCurrent = CharToFloat(token);
-                if (index == 13) Easun.PVInputVoltage = CharToFloat(token);
-                if (index == 15) Easun.BatteryDischargeCurrent = CharToFloat(token);
-                if (index == 16) {
-                    strncpy(Easun.DeviceStatus1, token, 8);
-                    Easun.BatteryCharging = Easun.DeviceStatus1[5] == '1';
-                    Easun.BatteryChargingSolar = Easun.DeviceStatus1[6] == '1';
-                    Easun.BatteryChargingAC = Easun.DeviceStatus1[7] == '1';
-                    Easun.BatteryVoltageSteady = Easun.DeviceStatus1[4] == '1';
-                }
-                if (index == 20) {
-                    strncpy(Easun.DeviceStatus2, token, 3);
-                    Easun.BatteryChargingFloating = Easun.DeviceStatus2[0] == '1';
-                    Easun.ACOutputOn = Easun.DeviceStatus2[1] == '1';
-                }
-                if (index == 19) Easun.PVChargingPower = CharToFloat(token);
-
-                token = strtok(nullptr, easunCommandSeparator);
-                index++;
+            if (index == 0) Easun.GridVoltage = CharToFloat(token);
+            if (index == 1) Easun.GridFrequency = CharToFloat(token);
+            if (index == 2) Easun.ACOutputVoltage = CharToFloat(token);
+            if (index == 3) Easun.ACOutputFrequency = CharToFloat(token);
+            if (index == 5) Easun.ACOutputActivePower = CharToFloat(token);
+            if (index == 6) Easun.ACOutputLoadPercent = CharToFloat(token);
+            if (index == 7) Easun.BusVoltage = CharToFloat(token);
+            if (index == 8) Easun.BatteryVoltage = CharToFloat(token);
+            if (index == 9) Easun.BatteryChargingCurrent = CharToFloat(token);
+            if (index == 10) Easun.BatteryCapacityPercent = CharToFloat(token);
+            if (index == 11) Easun.InverterTemperature = CharToFloat(token);
+            if (index == 12) Easun.PVInputCurrent = CharToFloat(token);
+            if (index == 13) Easun.PVInputVoltage = CharToFloat(token);
+            if (index == 15) Easun.BatteryDischargeCurrent = CharToFloat(token);
+            if (index == 16) {
+                strncpy(Easun.DeviceStatus1, token, 8);
+                Easun.BatteryCharging = Easun.DeviceStatus1[5] == '1';
+                Easun.BatteryChargingSolar = Easun.DeviceStatus1[6] == '1';
+                Easun.BatteryChargingAC = Easun.DeviceStatus1[7] == '1';
+                Easun.BatteryVoltageSteady = Easun.DeviceStatus1[4] == '1';
             }
-            AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: QPIGS parsed OK"));
-            break;
+            if (index == 20) {
+                strncpy(Easun.DeviceStatus2, token, 3);
+                Easun.BatteryChargingFloating = Easun.DeviceStatus2[0] == '1';
+                Easun.ACOutputOn = Easun.DeviceStatus2[1] == '1';
+            }
+            if (index == 19) Easun.PVChargingPower = CharToFloat(token);
+
+            token = strtok(nullptr, easunCommandSeparator);
+            index++;
         }
-        case 1: //QMOD
-        {
-            strncpy(Easun.CurrentMode, Easun.buffer, 1);
-            AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: QMOD parsed OK"));
-            break;
-        }
+        AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: QPIGS parsed OK"));
+    }
+    else if (strcmp("QMOD", command) == 0)
+    {
+        strncpy(Easun.CurrentMode, Easun.buffer, 1);
+        AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: QMOD parsed OK"));
     }
 }
 
@@ -316,6 +339,15 @@ void EasunSensorsShow(bool json)
     #endif
 }
 
+void EasunProcessCommand(void) {
+    AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: Command: %s, Data: %s"), XdrvMailbox.command, XdrvMailbox.data);
+    if (strlen(XdrvMailbox.data) > 0) {
+        EasunEnqueueCommand(XdrvMailbox.data);
+        //Response_P(PSTR("{\"Easun\":{\"Command\":\"%s\"}}"), XdrvMailbox.data);
+        ResponseCmndDone();
+    }
+}
+
 /*********************************************************************************************\
  * Interface
 \*********************************************************************************************/
@@ -348,16 +380,20 @@ bool Xsns101(uint8_t function)
                 EasunInit();
             }
             else {
-                EasunSendStatusCommand();
+                for (int i = easunStatusCommandSize - 1; i >= 0; i--) {
+                    const char *command = easunStatusCommands[i];
+                    EasunEnqueueCommand((char*) command);
+                }
             }
             easunLoopSeconds = XSNS_101_COMMAND_PERIOD_SECONDS;
         }
 
-        if (Easun.cmdStatus == 0 && easunStatusCommandIndex > 0) {
-            EasunSendStatusCommand();
+        if (EasunSerial && Easun.cmdStatus == 0 && easunCommandIndex > -1) {
+            EasunSendCommand();
         }
         break;
     case FUNC_COMMAND:
+        result = DecodeCommand(kEasunCommand, EasunCommand);
         break;
     case FUNC_JSON_APPEND:
         EasunSensorsShow(1);
