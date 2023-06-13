@@ -148,8 +148,9 @@ void EasunSerialInput(void)
                     AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: Command: %s, Response: %s, commandIndex: %d"), command, Easun.buffer, easunCommandIndex);
 
                     // ResponseClear();
-                    // Response_P(PSTR("{\"Easun\":{\"Command\":\"%s\", \"Response\":\"%s\"}}"), command, Easun.buffer);
-                    // MqttPublishPrefixTopicRulesProcess_P(RESULT_OR_CMND, PSTR("Easun"));
+                    //Response_P(PSTR("{\"Easun\":{\"Command\":\"%s\", \"Response\":\"%s\"}}"), command, Easun.buffer);
+                    //MqttPublishPrefixTopicRulesProcess_P(RESULT_OR_STAT, PSTR("Easun"));
+
                     //parse
                     EasunParseReceivedData(command);
 
