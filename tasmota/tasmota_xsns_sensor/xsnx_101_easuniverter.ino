@@ -63,8 +63,6 @@ struct EASUN {
 void EasunInit(void) {
     Easun.active = false;
     Easun.cmdStatus = 0;
-    //easunStatusCommandIndex = 0;
-    easunCommandIndex = -1;
     easunLoopSeconds = XSNS_101_COMMAND_PERIOD_SECONDS;
 
     Easun.CurrentMode = strdup("?");
@@ -91,6 +89,11 @@ void EasunInit(void) {
     Easun.BatteryChargingAC = false;
     Easun.BatteryChargingFloating = false;
     Easun.BatteryVoltageSteady = false;
+
+    while (easunCommandIndex > -1) {
+        free(easunCommandBuffer[easunCommandIndex]);
+        easunCommandIndex--;
+    }
 
     if (EasunSerial != nullptr) {
         AddLog(LOG_LEVEL_INFO, PSTR("[EASUN]: Closing serial port"));
@@ -174,7 +177,7 @@ void EasunEnqueueCommand(char *command)
     if (easunCommandIndex < 10) {
         easunCommandIndex++;
         int commandSize = strlen(command);
-        easunCommandBuffer[easunCommandIndex] = new char[commandSize + 1];
+        easunCommandBuffer[easunCommandIndex] = (char*)(malloc(commandSize + 1));
         strcpy(easunCommandBuffer[easunCommandIndex], command);
         AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: Enqueue command: %s, commandIndex: %d"), command, easunCommandIndex);
     }
@@ -394,6 +397,7 @@ bool Xsns101(uint8_t function)
         }
         break;
     case FUNC_COMMAND:
+        // ea_send <command> eg: ea_send QPIGS
         result = DecodeCommand(kEasunCommand, EasunCommand);
         break;
     case FUNC_JSON_APPEND:
