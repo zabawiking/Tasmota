@@ -6,6 +6,7 @@
 int easunLoopSeconds = 0;
 
 #define EASUN_BUFFER_SIZE       256
+#define EASUN_COMMMAND_SIZE     128
 
 //QPIGS => rec 108
 //int easunStatusCommandIndex = 0;
@@ -13,7 +14,7 @@ const char* easunStatusCommands[] PROGMEM = { "QPIGS", "QMOD", "QPIRI", "QPIWS" 
 const char *easunCommandSeparator PROGMEM = const_cast<char *>(" ");
 const int easunStatusCommandSize = sizeof(easunStatusCommands) / sizeof(char*);
 
-char* easunCommandBuffer[10];
+char PROGMEM easunCommandBuffer[10][EASUN_COMMMAND_SIZE + 1];
 int easunCommandIndex = -1;
 
 #include <TasmotaSerial.h>
@@ -26,9 +27,9 @@ void (*const EasunCommand[])(void) PROGMEM = {
     &EasunProcessCommand
 };
 
-struct EASUN {
+PROGMEM struct EASUN {
     bool active;
-    char *buffer = nullptr;                 // Serial receive buffer
+    char buffer[EASUN_BUFFER_SIZE];        // Serial receive buffer
     int byteCounter = 0;                   // Index in serial receive buffer
     uint8_t cmdStatus = 0;                 // 0 - awaiting command, 1 - command send - waiting for rec, 2 - receiving, 3 - received ok
 
@@ -90,22 +91,14 @@ void EasunInit(void) {
     Easun.BatteryChargingFloating = false;
     Easun.BatteryVoltageSteady = false;
 
-    while (easunCommandIndex > -1) {
-        free(easunCommandBuffer[easunCommandIndex]);
-        easunCommandIndex--;
-    }
+    easunCommandIndex = -1;
 
     if (EasunSerial != nullptr) {
         AddLog(LOG_LEVEL_INFO, PSTR("[EASUN]: Closing serial port"));
         EasunSerial->end();
     }
 
-    if (Easun.buffer != nullptr) {
-        free(Easun.buffer);
-    }
-
     int baudrate = 2400;
-    Easun.buffer = (char*)(malloc(EASUN_BUFFER_SIZE));
     if (Easun.buffer != nullptr) {
         EasunSerial = new TasmotaSerial(Pin(GPIO_EASUN_RX), Pin(GPIO_EASUN_TX), 2);
         if (EasunSerial->begin(baudrate)) {
@@ -118,7 +111,6 @@ void EasunInit(void) {
             Easun.active = true;
             return;
         }
-        free(Easun.buffer);
     }
     AddLog(LOG_LEVEL_INFO, PSTR("[EASUN]: Error while opening serial port"));
     Easun.active = false;
@@ -150,14 +142,9 @@ void EasunSerialInput(void)
                     char *command = easunCommandBuffer[easunCommandIndex];
                     AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: Command: %s, Response: %s, commandIndex: %d"), command, Easun.buffer, easunCommandIndex);
 
-                    // ResponseClear();
-                    //Response_P(PSTR("{\"Easun\":{\"Command\":\"%s\", \"Response\":\"%s\"}}"), command, Easun.buffer);
-                    //MqttPublishPrefixTopicRulesProcess_P(RESULT_OR_STAT, PSTR("Easun"));
-
                     //parse
                     EasunParseReceivedData(command);
 
-                    free(easunCommandBuffer[easunCommandIndex]);
                     easunCommandIndex--;
                 } else {
                     AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: Response: %s"), Easun.buffer);
@@ -176,9 +163,7 @@ void EasunEnqueueCommand(char *command)
 {
     if (easunCommandIndex < 10) {
         easunCommandIndex++;
-        int commandSize = strlen(command);
-        easunCommandBuffer[easunCommandIndex] = (char*)(malloc(commandSize + 1));
-        strcpy(easunCommandBuffer[easunCommandIndex], command);
+        strncpy(easunCommandBuffer[easunCommandIndex], command, EASUN_COMMMAND_SIZE);
         AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: Enqueue command: %s, commandIndex: %d"), command, easunCommandIndex);
     }
 }
@@ -195,6 +180,7 @@ void EasunSendCommand()
     EasunSerial->write(crc >> 8);
     EasunSerial->write(crc & 0xFF);
     EasunSerial->write(0x0D); // <CR>
+    EasunSerial->flush();
 
     Easun.cmdStatus = 1;
 }
@@ -218,9 +204,6 @@ ushort EasunCRC16XMODEM(char *buf, int len)
 
 void EasunParseReceivedData(char *command)
 {
-    if (Easun.buffer == nullptr)
-        return;
-
     if (strcmp("NAK", Easun.buffer) == 0)
         return;
 
@@ -385,8 +368,7 @@ bool Xsns101(uint8_t function)
             }
             else {
                 for (int i = easunStatusCommandSize - 1; i >= 0; i--) {
-                    const char *command = easunStatusCommands[i];
-                    EasunEnqueueCommand((char*) command);
+                    EasunEnqueueCommand((char*) easunStatusCommands[i]);
                 }
             }
             easunLoopSeconds = XSNS_101_COMMAND_PERIOD_SECONDS;
