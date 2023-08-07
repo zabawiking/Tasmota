@@ -11,7 +11,6 @@ int easunLoopSeconds = 0;
 //QPIGS => rec 108
 //int easunStatusCommandIndex = 0;
 const char* easunStatusCommands[] PROGMEM = { "QPIGS", "QMOD", "QPIRI", "QPIWS" };
-const char *easunCommandSeparator PROGMEM = const_cast<char *>(" ");
 const int easunStatusCommandSize = sizeof(easunStatusCommands) / sizeof(char*);
 
 char PROGMEM easunCommandBuffer[10][EASUN_COMMMAND_SIZE + 1];
@@ -34,7 +33,7 @@ PROGMEM struct EASUN {
     uint8_t cmdStatus = 0;                 // 0 - awaiting command, 1 - command send - waiting for rec, 2 - receiving, 3 - received ok
 
     //QMOD
-    char* CurrentMode;
+    char CurrentMode[2];
     //QPIGS
     float GridVoltage;
     float GridFrequency;
@@ -52,8 +51,8 @@ PROGMEM struct EASUN {
     float PVInputVoltage;
     float BatteryDischargeCurrent;
     float PVChargingPower;
-    char* DeviceStatus1;
-    char* DeviceStatus2;
+    char DeviceStatus1[9];
+    char DeviceStatus2[4];
     bool BatteryCharging;
     bool BatteryChargingSolar;
     bool BatteryChargingAC;
@@ -66,9 +65,9 @@ void EasunInit(void) {
     Easun.cmdStatus = 0;
     easunLoopSeconds = XSNS_101_COMMAND_PERIOD_SECONDS;
 
-    Easun.CurrentMode = strdup("?");
-    Easun.DeviceStatus1 = strdup("00000000");
-    Easun.DeviceStatus2 = strdup("000");
+    strcpy(Easun.CurrentMode, "?");
+    strcpy(Easun.DeviceStatus1, "00000000");
+    strcpy(Easun.DeviceStatus2, "000");
     Easun.GridVoltage = 0.0;
     Easun.GridFrequency = 0.0;
     Easun.ACOutputVoltage = 0.0;
@@ -211,39 +210,41 @@ void EasunParseReceivedData(char *command)
         if (Easun.byteCounter < 106)
             return;
 
-        char *token = strtok(Easun.buffer, easunCommandSeparator);
+        char *token = strtok(Easun.buffer, " ");
         int index = 0;
         while (token != nullptr)
         {
-            if (index == 0) Easun.GridVoltage = CharToFloat(token);
-            if (index == 1) Easun.GridFrequency = CharToFloat(token);
-            if (index == 2) Easun.ACOutputVoltage = CharToFloat(token);
-            if (index == 3) Easun.ACOutputFrequency = CharToFloat(token);
-            if (index == 5) Easun.ACOutputActivePower = CharToFloat(token);
-            if (index == 6) Easun.ACOutputLoadPercent = CharToFloat(token);
-            if (index == 7) Easun.BusVoltage = CharToFloat(token);
-            if (index == 8) Easun.BatteryVoltage = CharToFloat(token);
-            if (index == 9) Easun.BatteryChargingCurrent = CharToFloat(token);
-            if (index == 10) Easun.BatteryCapacityPercent = CharToFloat(token);
-            if (index == 11) Easun.InverterTemperature = CharToFloat(token);
-            if (index == 12) Easun.PVInputCurrent = CharToFloat(token);
-            if (index == 13) Easun.PVInputVoltage = CharToFloat(token);
-            if (index == 15) Easun.BatteryDischargeCurrent = CharToFloat(token);
-            if (index == 16) {
-                strncpy(Easun.DeviceStatus1, token, 8);
-                Easun.BatteryCharging = Easun.DeviceStatus1[5] == '1';
-                Easun.BatteryChargingSolar = Easun.DeviceStatus1[6] == '1';
-                Easun.BatteryChargingAC = Easun.DeviceStatus1[7] == '1';
-                Easun.BatteryVoltageSteady = Easun.DeviceStatus1[4] == '1';
+            switch(index) {
+                case 0: Easun.GridVoltage = CharToFloat(token); break;
+                case 1: Easun.GridFrequency = CharToFloat(token); break;
+                case 2: Easun.ACOutputVoltage = CharToFloat(token); break;
+                case 3: Easun.ACOutputFrequency = CharToFloat(token); break;
+                case 5: Easun.ACOutputActivePower = CharToFloat(token); break;
+                case 6: Easun.ACOutputLoadPercent = CharToFloat(token); break;
+                case 7: Easun.BusVoltage = CharToFloat(token); break;
+                case 8: Easun.BatteryVoltage = CharToFloat(token); break;
+                case 9: Easun.BatteryChargingCurrent = CharToFloat(token); break;
+                case 10: Easun.BatteryCapacityPercent = CharToFloat(token); break;
+                case 11: Easun.InverterTemperature = CharToFloat(token); break;
+                case 12: Easun.PVInputCurrent = CharToFloat(token); break;
+                case 13: Easun.PVInputVoltage = CharToFloat(token); break;
+                case 15: Easun.BatteryDischargeCurrent = CharToFloat(token); break;
+                case 16:
+                    strncpy(Easun.DeviceStatus1, token, 8);
+                    Easun.BatteryCharging = Easun.DeviceStatus1[5] == '1';
+                    Easun.BatteryChargingSolar = Easun.DeviceStatus1[6] == '1';
+                    Easun.BatteryChargingAC = Easun.DeviceStatus1[7] == '1';
+                    Easun.BatteryVoltageSteady = Easun.DeviceStatus1[4] == '1';
+                break;
+                case 20:
+                    strncpy(Easun.DeviceStatus2, token, 3);
+                    Easun.BatteryChargingFloating = Easun.DeviceStatus2[0] == '1';
+                    Easun.ACOutputOn = Easun.DeviceStatus2[1] == '1';
+                break;
+                case 19: Easun.PVChargingPower = CharToFloat(token); break;
             }
-            if (index == 20) {
-                strncpy(Easun.DeviceStatus2, token, 3);
-                Easun.BatteryChargingFloating = Easun.DeviceStatus2[0] == '1';
-                Easun.ACOutputOn = Easun.DeviceStatus2[1] == '1';
-            }
-            if (index == 19) Easun.PVChargingPower = CharToFloat(token);
 
-            token = strtok(nullptr, easunCommandSeparator);
+            token = strtok(nullptr, " ");
             index++;
         }
         AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: QPIGS parsed OK"));
