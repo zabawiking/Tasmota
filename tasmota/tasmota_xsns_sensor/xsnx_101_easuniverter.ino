@@ -97,9 +97,12 @@ void EasunInit(void) {
         EasunSerial->end();
     }
 
+    if (EasunSerial == nullptr) {
+        EasunSerial = new TasmotaSerial(Pin(GPIO_EASUN_RX), Pin(GPIO_EASUN_TX), 2);
+    }
+
     int baudrate = 2400;
     if (Easun.buffer != nullptr) {
-        EasunSerial = new TasmotaSerial(Pin(GPIO_EASUN_RX), Pin(GPIO_EASUN_TX), 2);
         if (EasunSerial->begin(baudrate)) {
             if (EasunSerial->hardwareSerial()) {
                 ClaimSerial();
