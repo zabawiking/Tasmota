@@ -61,6 +61,10 @@ PROGMEM struct EASUN {
 } Easun;
 
 void EasunInit(void) {
+
+    if (!PinUsed(GPIO_EASUN_RX) || !PinUsed(GPIO_EASUN_TX))
+        return;
+
     Easun.active = false;
     Easun.cmdStatus = 0;
     easunLoopSeconds = XSNS_101_COMMAND_PERIOD_SECONDS;
