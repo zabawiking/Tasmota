@@ -10,7 +10,7 @@ int easunLoopSeconds = 0;
 
 //QPIGS => rec 108
 //int easunStatusCommandIndex = 0;
-const char* easunStatusCommands[] PROGMEM = { "QPIGS", "QMOD", "QPIRI", "QPIWS" };
+const char* easunStatusCommands[] PROGMEM = { "QPIGS", "QMOD", "QPIRI", "QPIWS", "QOP" };
 const int easunStatusCommandSize = sizeof(easunStatusCommands) / sizeof(char*);
 
 char PROGMEM easunCommandBuffer[10][EASUN_COMMMAND_SIZE + 1];
@@ -58,6 +58,9 @@ PROGMEM struct EASUN {
     bool BatteryChargingAC;
     bool BatteryChargingFloating;
     bool BatteryVoltageSteady;
+
+    //QOP
+    char CurrentModeQOP[2];
 } Easun;
 
 void EasunInit(void) {
@@ -72,6 +75,7 @@ void EasunInit(void) {
     strcpy(Easun.CurrentMode, "?");
     strcpy(Easun.DeviceStatus1, "00000000");
     strcpy(Easun.DeviceStatus2, "000");
+    strcpy(Easun.CurrentModeQOP, "00");
     Easun.GridVoltage = 0.0;
     Easun.GridFrequency = 0.0;
     Easun.ACOutputVoltage = 0.0;
@@ -183,8 +187,17 @@ void EasunSendCommand()
     for (;commandSize > 0; commandSize--) {
         EasunSerial->write(*command++);
     }
-    EasunSerial->write(crc >> 8);
-    EasunSerial->write(crc & 0xFF);
+
+    char crc_lo = crc & 0xFF;
+    char crc_hi = crc >> 8;
+
+    if (crc_lo == 0x28 || crc_lo == 0x0d || crc_lo == 0x0a)
+      crc_lo++;
+    if (crc_hi == 0x28 || crc_hi == 0x0d || crc_hi == 0x0a)
+      crc_hi++;
+
+    EasunSerial->write(crc_hi);
+    EasunSerial->write(crc_lo);    
     EasunSerial->write(0x0D); // <CR>
     EasunSerial->flush();
 
@@ -261,6 +274,10 @@ void EasunParseReceivedData(char *command)
         strncpy(Easun.CurrentMode, Easun.buffer, 1);
         AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: QMOD parsed OK"));
     }
+    else if (strcmp("QOP", command) == 0) {
+      strncpy(Easun.CurrentModeQOP, Easun.buffer, 2);
+      AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: QOP parsed OK"));
+    }
 }
 
 void EasunSensorsShow(bool json)
@@ -292,12 +309,15 @@ void EasunSensorsShow(bool json)
         ResponseAppend_P(PSTR(",\"BatteryChargingFloating\": %d"), Easun.BatteryChargingFloating);
         ResponseAppend_P(PSTR(",\"BatteryVoltageSteady\": %d"), Easun.BatteryVoltageSteady);
 
+        ResponseAppend_P(PSTR(",\"CurrentModeQOP\": \"%s\""), Easun.CurrentModeQOP);
+
         ResponseJsonEnd();
     }
     #ifdef USE_WEBSERVER
     else {
         WSContentSend_P(PSTR("<tr><th colspan=\"2\"><hr/></th></tr>"));
         WSContentSend_P(PSTR("{s}CurrentMode{m}%s{e}"), Easun.CurrentMode);
+        WSContentSend_P(PSTR("{s}CurrentModeQOP{m}%s{e}"), Easun.CurrentModeQOP);
         WSContentSend_P(PSTR("{s}PVChargingPower{m}%.0f W{e}"), Easun.PVChargingPower);
         WSContentSend_P(PSTR("{s}ACOutputActivePower{m}%.0f W{e}"), Easun.ACOutputActivePower);
         WSContentSend_P(PSTR("{s}ACOutputLoadPercent{m}%.0f %%{e}"), Easun.ACOutputLoadPercent);
