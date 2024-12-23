@@ -10,7 +10,7 @@ int easunLoopSeconds = 0;
 
 //QPIGS => rec 108
 //int easunStatusCommandIndex = 0;
-const char* easunStatusCommands[] PROGMEM = { "QPIGS", "QMOD", "QPIRI", "QPIWS", "QOP" };
+const char* easunStatusCommands[] PROGMEM = { "QPIGS", "QMOD", "QPIRI", "QPIWS" };
 const int easunStatusCommandSize = sizeof(easunStatusCommands) / sizeof(char*);
 
 char PROGMEM easunCommandBuffer[10][EASUN_COMMMAND_SIZE + 1];
@@ -59,8 +59,9 @@ PROGMEM struct EASUN {
     bool BatteryChargingFloating;
     bool BatteryVoltageSteady;
 
-    //QOP
-    char CurrentModeQOP[2];
+    //QPIRI
+    char SourcePriority[4];
+    char ChargingSourcePriority[4];
 } Easun;
 
 void EasunInit(void) {
@@ -75,7 +76,8 @@ void EasunInit(void) {
     strcpy(Easun.CurrentMode, "?");
     strcpy(Easun.DeviceStatus1, "00000000");
     strcpy(Easun.DeviceStatus2, "000");
-    strcpy(Easun.CurrentModeQOP, "00");
+    strcpy(Easun.SourcePriority, "???");
+    strcpy(Easun.ChargingSourcePriority, "???");    
     Easun.GridVoltage = 0.0;
     Easun.GridFrequency = 0.0;
     Easun.ACOutputVoltage = 0.0;
@@ -269,14 +271,39 @@ void EasunParseReceivedData(char *command)
         }
         AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: QPIGS parsed OK"));
     }
+    else if (strcmp("QPIRI", command) == 0) {
+        if (Easun.byteCounter < 95)
+            return;
+
+        char *token = strtok(Easun.buffer, " ");
+        int index = 0;
+        while (token != nullptr)
+        {
+            switch(index) {
+                case 16: 
+                  if (TextToInt(token) == 0) strcpy(Easun.SourcePriority, "UTL");
+                  else if (TextToInt(token) == 1) strcpy(Easun.SourcePriority, "SOL");
+                  else if (TextToInt(token) == 2) strcpy(Easun.SourcePriority, "SBU");
+                  else strcpy(Easun.SourcePriority, "???");
+                break;
+                case 17: 
+                  if (TextToInt(token) == 0) strcpy(Easun.ChargingSourcePriority, "CUT");
+                  else if (TextToInt(token) == 1) strcpy(Easun.ChargingSourcePriority, "CSO");
+                  else if (TextToInt(token) == 2) strcpy(Easun.ChargingSourcePriority, "SUN");
+                  else if (TextToInt(token) == 3) strcpy(Easun.ChargingSourcePriority, "OSO");
+                  else strcpy(Easun.ChargingSourcePriority, "???");
+                break;
+            }
+
+            token = strtok(nullptr, " ");
+            index++;
+        }
+        AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: QPIRI parsed OK"));
+    }
     else if (strcmp("QMOD", command) == 0)
     {
         strncpy(Easun.CurrentMode, Easun.buffer, 1);
         AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: QMOD parsed OK"));
-    }
-    else if (strcmp("QOP", command) == 0) {
-      strncpy(Easun.CurrentModeQOP, Easun.buffer, 2);
-      AddLog(LOG_LEVEL_DEBUG, PSTR("[EASUN]: QOP parsed OK"));
     }
 }
 
@@ -309,7 +336,8 @@ void EasunSensorsShow(bool json)
         ResponseAppend_P(PSTR(",\"BatteryChargingFloating\": %d"), Easun.BatteryChargingFloating);
         ResponseAppend_P(PSTR(",\"BatteryVoltageSteady\": %d"), Easun.BatteryVoltageSteady);
 
-        ResponseAppend_P(PSTR(",\"CurrentModeQOP\": \"%s\""), Easun.CurrentModeQOP);
+        ResponseAppend_P(PSTR(",\"SourcePriority\": \"%s\""), Easun.SourcePriority);
+        ResponseAppend_P(PSTR(",\"ChargingSourcePriority\": \"%s\""), Easun.ChargingSourcePriority);        
 
         ResponseJsonEnd();
     }
@@ -317,7 +345,8 @@ void EasunSensorsShow(bool json)
     else {
         WSContentSend_P(PSTR("<tr><th colspan=\"2\"><hr/></th></tr>"));
         WSContentSend_P(PSTR("{s}CurrentMode{m}%s{e}"), Easun.CurrentMode);
-        WSContentSend_P(PSTR("{s}CurrentModeQOP{m}%s{e}"), Easun.CurrentModeQOP);
+        WSContentSend_P(PSTR("{s}SourcePriority{m}%s{e}"), Easun.SourcePriority);
+        WSContentSend_P(PSTR("{s}ChargingSourcePriority{m}%s{e}"), Easun.ChargingSourcePriority);
         WSContentSend_P(PSTR("{s}PVChargingPower{m}%.0f W{e}"), Easun.PVChargingPower);
         WSContentSend_P(PSTR("{s}ACOutputActivePower{m}%.0f W{e}"), Easun.ACOutputActivePower);
         WSContentSend_P(PSTR("{s}ACOutputLoadPercent{m}%.0f %%{e}"), Easun.ACOutputLoadPercent);
@@ -426,3 +455,132 @@ bool Xsns101(uint8_t function)
 }
 
 #endif // USE_EASUNINVERTER
+
+
+/*
+PIPSOLAR_SENSOR(grid_voltage, QPIGS, float)
+   PIPSOLAR_SENSOR(grid_frequency, QPIGS, float)
+   PIPSOLAR_SENSOR(ac_output_voltage, QPIGS, float)
+   PIPSOLAR_SENSOR(ac_output_frequency, QPIGS, float)
+   PIPSOLAR_SENSOR(ac_output_apparent_power, QPIGS, int)
+   PIPSOLAR_SENSOR(ac_output_active_power, QPIGS, int)
+   PIPSOLAR_SENSOR(output_load_percent, QPIGS, int)
+   PIPSOLAR_SENSOR(bus_voltage, QPIGS, int)
+   PIPSOLAR_SENSOR(battery_voltage, QPIGS, float)
+   PIPSOLAR_SENSOR(battery_charging_current, QPIGS, int)
+   PIPSOLAR_SENSOR(battery_capacity_percent, QPIGS, int)
+   PIPSOLAR_SENSOR(inverter_heat_sink_temperature, QPIGS, int)
+   PIPSOLAR_SENSOR(pv_input_current_for_battery, QPIGS, float)
+   PIPSOLAR_SENSOR(pv_input_voltage, QPIGS, float)
+   PIPSOLAR_SENSOR(battery_voltage_scc, QPIGS, float)
+   PIPSOLAR_SENSOR(battery_discharge_current, QPIGS, int)
+   PIPSOLAR_BINARY_SENSOR(add_sbu_priority_version, QPIGS, int)
+   PIPSOLAR_BINARY_SENSOR(configuration_status, QPIGS, int)
+   PIPSOLAR_BINARY_SENSOR(scc_firmware_version, QPIGS, int)
+   PIPSOLAR_BINARY_SENSOR(load_status, QPIGS, int)
+   PIPSOLAR_BINARY_SENSOR(battery_voltage_to_steady_while_charging, QPIGS, int)
+   PIPSOLAR_BINARY_SENSOR(charging_status, QPIGS, int)
+   PIPSOLAR_BINARY_SENSOR(scc_charging_status, QPIGS, int)
+   PIPSOLAR_BINARY_SENSOR(ac_charging_status, QPIGS, int)
+   PIPSOLAR_SENSOR(battery_voltage_offset_for_fans_on, QPIGS, int)  //.1 scale
+   PIPSOLAR_SENSOR(eeprom_version, QPIGS, int)
+   PIPSOLAR_SENSOR(pv_charging_power, QPIGS, int)
+   PIPSOLAR_BINARY_SENSOR(charging_to_floating_mode, QPIGS, int)
+   PIPSOLAR_BINARY_SENSOR(switch_on, QPIGS, int)
+   PIPSOLAR_BINARY_SENSOR(dustproof_installed, QPIGS, int)
+ 
+   // QPIRI values
+   PIPSOLAR_SENSOR(grid_rating_voltage, QPIRI, float)
+   PIPSOLAR_SENSOR(grid_rating_current, QPIRI, float)
+   PIPSOLAR_SENSOR(ac_output_rating_voltage, QPIRI, float)
+   PIPSOLAR_SENSOR(ac_output_rating_frequency, QPIRI, float)
+   PIPSOLAR_SENSOR(ac_output_rating_current, QPIRI, float)
+   PIPSOLAR_SENSOR(ac_output_rating_apparent_power, QPIRI, int)
+   PIPSOLAR_SENSOR(ac_output_rating_active_power, QPIRI, int)
+   PIPSOLAR_SENSOR(battery_rating_voltage, QPIRI, float)
+   PIPSOLAR_SENSOR(battery_recharge_voltage, QPIRI, float)
+   PIPSOLAR_SENSOR(battery_under_voltage, QPIRI, float)
+   PIPSOLAR_SENSOR(battery_bulk_voltage, QPIRI, float)
+   PIPSOLAR_SENSOR(battery_float_voltage, QPIRI, float)
+   PIPSOLAR_SENSOR(battery_type, QPIRI, int)
+   PIPSOLAR_SENSOR(current_max_ac_charging_current, QPIRI, int)
+   PIPSOLAR_SENSOR(current_max_charging_current, QPIRI, int)
+   PIPSOLAR_SENSOR(input_voltage_range, QPIRI, int)
+   PIPSOLAR_SENSOR(output_source_priority, QPIRI, int)
+   PIPSOLAR_SENSOR(charger_source_priority, QPIRI, int)
+   PIPSOLAR_SENSOR(parallel_max_num, QPIRI, int)
+   PIPSOLAR_SENSOR(machine_type, QPIRI, int)
+   PIPSOLAR_SENSOR(topology, QPIRI, int)
+   PIPSOLAR_SENSOR(output_mode, QPIRI, int)
+   PIPSOLAR_SENSOR(battery_redischarge_voltage, QPIRI, float)
+   PIPSOLAR_SENSOR(pv_ok_condition_for_parallel, QPIRI, int)
+   PIPSOLAR_SENSOR(pv_power_balance, QPIRI, int)
+ 
+   // QMOD values
+   PIPSOLAR_VALUED_TEXT_SENSOR(device_mode, QMOD, char)
+ 
+   // QFLAG values
+   PIPSOLAR_BINARY_SENSOR(silence_buzzer_open_buzzer, QFLAG, int)
+   PIPSOLAR_BINARY_SENSOR(overload_bypass_function, QFLAG, int)
+   PIPSOLAR_BINARY_SENSOR(lcd_escape_to_default, QFLAG, int)
+   PIPSOLAR_BINARY_SENSOR(overload_restart_function, QFLAG, int)
+   PIPSOLAR_BINARY_SENSOR(over_temperature_restart_function, QFLAG, int)
+   PIPSOLAR_BINARY_SENSOR(backlight_on, QFLAG, int)
+   PIPSOLAR_BINARY_SENSOR(alarm_on_when_primary_source_interrupt, QFLAG, int)
+   PIPSOLAR_BINARY_SENSOR(fault_code_record, QFLAG, int)
+   PIPSOLAR_BINARY_SENSOR(power_saving, QFLAG, int)
+ 
+   // QPIWS values
+   PIPSOLAR_BINARY_SENSOR(warnings_present, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(faults_present, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(warning_power_loss, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(fault_inverter_fault, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(fault_bus_over, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(fault_bus_under, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(fault_bus_soft_fail, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(warning_line_fail, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(fault_opvshort, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(fault_inverter_voltage_too_low, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(fault_inverter_voltage_too_high, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(warning_over_temperature, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(warning_fan_lock, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(warning_battery_voltage_high, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(warning_battery_low_alarm, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(warning_battery_under_shutdown, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(warning_battery_derating, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(warning_over_load, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(warning_eeprom_failed, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(fault_inverter_over_current, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(fault_inverter_soft_failed, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(fault_self_test_failed, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(fault_op_dc_voltage_over, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(fault_battery_open, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(fault_current_sensor_failed, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(fault_battery_short, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(warning_power_limit, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(warning_pv_voltage_high, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(fault_mppt_overload, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(warning_mppt_overload, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(warning_battery_too_low_to_charge, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(fault_dc_dc_over_current, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(fault_code, QPIWS, int)
+   PIPSOLAR_BINARY_SENSOR(warnung_low_pv_energy, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(warning_high_ac_input_during_bus_soft_start, QPIWS, bool)
+   PIPSOLAR_BINARY_SENSOR(warning_battery_equalization, QPIWS, bool)
+ 
+   PIPSOLAR_TEXT_SENSOR(last_qpigs, QPIGS)
+   PIPSOLAR_TEXT_SENSOR(last_qpiri, QPIRI)
+   PIPSOLAR_TEXT_SENSOR(last_qmod, QMOD)
+   PIPSOLAR_TEXT_SENSOR(last_qflag, QFLAG)
+   PIPSOLAR_TEXT_SENSOR(last_qpiws, QPIWS)
+   PIPSOLAR_TEXT_SENSOR(last_qt, QT)
+   PIPSOLAR_TEXT_SENSOR(last_qmn, QMN)
+ 
+   PIPSOLAR_SWITCH(output_source_priority_utility_switch, QPIRI)
+   PIPSOLAR_SWITCH(output_source_priority_solar_switch, QPIRI)
+   PIPSOLAR_SWITCH(output_source_priority_battery_switch, QPIRI)
+   PIPSOLAR_SWITCH(output_source_priority_hybrid_switch, QPIRI)
+   PIPSOLAR_SWITCH(input_voltage_range_switch, QPIRI)
+   PIPSOLAR_SWITCH(pv_ok_condition_for_parallel_switch, QPIRI)
+   PIPSOLAR_SWITCH(pv_power_balance_switch, QPIRI)
+*/
