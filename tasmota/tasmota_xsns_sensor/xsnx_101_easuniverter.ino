@@ -284,6 +284,7 @@ void EasunParseReceivedData(char *command)
                   if (TextToInt(token) == 0) strcpy(Easun.SourcePriority, "UTL");
                   else if (TextToInt(token) == 1) strcpy(Easun.SourcePriority, "SOL");
                   else if (TextToInt(token) == 2) strcpy(Easun.SourcePriority, "SBU");
+                  else if (TextToInt(token) == 3) strcpy(Easun.SourcePriority, "MKS");
                   else strcpy(Easun.SourcePriority, "???");
                 break;
                 case 17: 
